@@ -16,7 +16,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
     user = await db.scalar(
         select(User)
         .options(selectinload(User.role))
-        .where(User.email == body.email, User.is_active.is_(True))
+        .where(User.email == body.email, User.is_active == True)  # noqa: E712 (MSSQL needs `= 1`, not `IS 1`)
     )
     if user is None or not verify_password(body.password, user.hashed_password):
         raise HTTPException(

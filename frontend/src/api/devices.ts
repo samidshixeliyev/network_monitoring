@@ -17,4 +17,8 @@ export const devicesApi = {
   remove: async (id: string): Promise<void> => {
     await apiClient.delete(`/devices/${id}`)
   },
+  simulate: async (id: string, status: 'online' | 'offline'): Promise<Device> => {
+    const { data } = await apiClient.post<Device>(`/devices/${id}/simulate`, { status })
+    return data
+  },
 }

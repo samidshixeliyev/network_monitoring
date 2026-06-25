@@ -94,7 +94,7 @@ export function NetworkGraph({ devices, selectedId, onSelect }: Props) {
       <MiniMap
         nodeColor={n => {
           const status = (n as DeviceNodeType).data?.device?.current_status
-          return status === 'online' ? '#16a34a' : status === 'offline' ? '#ef4444' : '#94a3b8'
+          return status === 'online' ? '#16a34a' : status === 'offline' ? '#ef4444' : '#eab308'
         }}
         maskColor="rgba(248,250,252,0.8)"
         style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}

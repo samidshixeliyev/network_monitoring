@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import type { Device, DeviceCreate, DeviceUpdate } from '../types'
+import type { Device, DeviceCreate, DeviceType, DeviceUpdate } from '../types'
+import { DEVICE_TYPES, DEVICE_TYPE_LABELS } from '../lib/deviceIcons'
 
 interface Props {
   device?: Device
+  /** Pre-fill coordinates (e.g. from clicking the map when adding a device). */
+  initialCoords?: { lat: number; lng: number }
   onSave: (data: DeviceCreate | DeviceUpdate) => Promise<void>
   onClose: () => void
 }
@@ -24,13 +27,20 @@ const label: React.CSSProperties = {
   marginBottom: 4,
 }
 
-export function DeviceForm({ device, onSave, onClose }: Props) {
+const coordStr = (n: number | null | undefined, fallback?: number) =>
+  n != null ? String(n) : fallback != null ? String(fallback) : ''
+
+export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
   const [form, setForm] = useState({
     vendor_name:   device?.vendor_name   ?? '',
     ip_address:    device?.ip_address    ?? '',
     model_name:    device?.model_name    ?? '',
     description:   device?.description   ?? '',
     location_text: device?.location_text ?? '',
+    device_type:   (device?.device_type  ?? 'other') as DeviceType,
+    latitude:      coordStr(device?.latitude,  initialCoords?.lat),
+    longitude:     coordStr(device?.longitude, initialCoords?.lng),
+    is_critical:   device?.is_critical   ?? false,
     is_enabled:    device?.is_enabled    ?? true,
   })
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +59,10 @@ export function DeviceForm({ device, onSave, onClose }: Props) {
         model_name:    form.model_name   || undefined,
         description:   form.description  || undefined,
         location_text: form.location_text || undefined,
+        device_type:   form.device_type,
+        latitude:      form.latitude  === '' ? null : Number(form.latitude),
+        longitude:     form.longitude === '' ? null : Number(form.longitude),
+        is_critical:   form.is_critical,
         is_enabled:    form.is_enabled,
       })
       onClose()
@@ -64,7 +78,10 @@ export function DeviceForm({ device, onSave, onClose }: Props) {
     <div
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        // Above Leaflet panes/controls (which reach ~400–1000) so the modal is
+        // never hidden behind the map.
+        zIndex: 4000,
       }}
       onClick={onClose}
     >
@@ -92,6 +109,15 @@ export function DeviceForm({ device, onSave, onClose }: Props) {
                 value={form.ip_address} placeholder="192.168.1.1"
                 onChange={(e) => set('ip_address', e.target.value)} />
             </div>
+            <div>
+              <label style={label}>Type (xəritə ikonu)</label>
+              <select style={{ ...field, cursor: 'pointer' }} value={form.device_type}
+                onChange={(e) => set('device_type', e.target.value)}>
+                {DEVICE_TYPES.map(t => (
+                  <option key={t} value={t}>{DEVICE_TYPE_LABELS[t]}</option>
+                ))}
+              </select>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label style={label}>Model</label>
@@ -104,6 +130,25 @@ export function DeviceForm({ device, onSave, onClose }: Props) {
                   onChange={(e) => set('location_text', e.target.value)} />
               </div>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={label}>Latitude (en dairəsi)</label>
+                <input style={{ ...field, fontFamily: 'monospace' }} type="number" step="any"
+                  min={-90} max={90} placeholder="40.4093"
+                  value={form.latitude}
+                  onChange={(e) => set('latitude', e.target.value)} />
+              </div>
+              <div>
+                <label style={label}>Longitude (uzunluq dairəsi)</label>
+                <input style={{ ...field, fontFamily: 'monospace' }} type="number" step="any"
+                  min={-180} max={180} placeholder="49.8671"
+                  value={form.longitude}
+                  onChange={(e) => set('longitude', e.target.value)} />
+              </div>
+            </div>
+            <p style={{ margin: '-6px 0 0', fontSize: 11, color: '#94a3b8' }}>
+              İpucu: koordinatları əl ilə yaza, və ya cihaz əlavə edərkən xəritəyə klikləyə bilərsiniz.
+            </p>
             <div>
               <label style={label}>Description</label>
               <textarea style={{ ...field, height: 68, resize: 'vertical' }}
@@ -114,6 +159,11 @@ export function DeviceForm({ device, onSave, onClose }: Props) {
               <input type="checkbox" checked={form.is_enabled}
                 onChange={(e) => set('is_enabled', e.target.checked)} />
               Enabled (include in ping loop)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: '#b91c1c', fontWeight: 600 }}>
+              <input type="checkbox" checked={form.is_critical}
+                onChange={(e) => set('is_critical', e.target.checked)} />
+              ⚠ Kritik / vacib cihaz (təcili səsli xəbərdarlıq)
             </label>
           </div>
 

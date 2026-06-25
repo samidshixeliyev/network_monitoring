@@ -4,7 +4,7 @@ import type { Device } from '../types'
 const STATUS_STYLE = {
   online:  { stripe: '#16a34a', dot: '#16a34a', label: 'Online',  labelColor: '#16a34a' },
   offline: { stripe: '#ef4444', dot: '#ef4444', label: 'Offline', labelColor: '#ef4444' },
-  unknown: { stripe: '#94a3b8', dot: '#94a3b8', label: 'Unknown', labelColor: '#94a3b8' },
+  unknown: { stripe: '#eab308', dot: '#eab308', label: 'Unknown', labelColor: '#a16207' },
 }
 
 export type DeviceNodeData = { device: Device }

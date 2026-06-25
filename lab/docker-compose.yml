@@ -1,0 +1,114 @@
+# ── Docker monitoring lab ────────────────────────────────────────────────────
+# A self-contained test environment with REAL, pingable "network devices".
+# Everything runs on one Docker network so the backend can ICMP-ping the
+# devices (on Windows/macOS the host itself cannot reach container IPs, so the
+# prober must live on the same network — that's why the api runs here too).
+#
+#   Run:    cd lab && docker compose up -d --build
+#   Devices: docker stop cisco-isr-baki   → watch it go UNKNOWN → OFFLINE live
+#            docker start cisco-isr-baki   → back ONLINE
+#   Frontend: run on the host as usual (cd frontend && npm run dev) → :5173
+#
+# The 4 device containers are lightweight stand-ins (Alpine) that reply to ICMP.
+# Swap any of them for a real NOS image (Nokia SR Linux / Arista cEOS / FRR), or
+# use `containerlab` for licensed Cisco/Juniper images — see README.md.
+
+name: netmon-lab
+
+networks:
+  netlab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Lab_Str0ng_Pass!"
+      MSSQL_PID: "Express"
+    networks: [netlab]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ── "Network devices" — real, pingable containers (static IPs) ─────────────
+  cisco-isr-baki:
+    image: alpine:3.20
+    container_name: cisco-isr-baki
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.11
+    restart: unless-stopped
+
+  juniper-mx-ganja:
+    image: alpine:3.20
+    container_name: juniper-mx-ganja
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.12
+    restart: unless-stopped
+
+  cisco-cat-sumqayit:
+    image: alpine:3.20
+    container_name: cisco-cat-sumqayit
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.13
+    restart: unless-stopped
+
+  juniper-srx-lankaran:
+    image: alpine:3.20
+    container_name: juniper-srx-lankaran
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.14
+    restart: unless-stopped
+
+  # ── Monitoring backend (probes the devices over ICMP) ──────────────────────
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      MSSQL_SERVER: mssql
+      MSSQL_DATABASE: network
+      MSSQL_USER: sa
+      MSSQL_PASSWORD: "Lab_Str0ng_Pass!"
+      MSSQL_DRIVER: ODBC Driver 18 for SQL Server
+      MSSQL_ENCRYPT: "yes"
+      MSSQL_TRUST_CERT: "yes"
+      SECRET_KEY: lab-secret-change-me-0123456789abcdef
+      SIMULATION_MODE: "false"
+      # Inside the container icmplib works (NET_RAW cap granted in the image).
+      PING_METHOD: icmplib
+      PING_INTERVAL_SECONDS: "15"
+      PING_COUNT: "3"
+      FLAP_THRESHOLD: "2"
+      DEFAULT_MANAGER_EMAIL: admin@example.com
+      DEFAULT_MANAGER_PASSWORD: changeme
+    networks: [netlab]
+    ports:
+      - "8000:8000"
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ../backend:/app
+    command: >
+      sh -c "python create_db.py &&
+             alembic upgrade head &&
+             python seed.py &&
+             python seed_lab_devices.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"

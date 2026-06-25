@@ -2,11 +2,11 @@ import ipaddress
 import socket
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.device import DeviceStatus
+from app.models.device import DeviceStatus, DeviceType
 
 
 def _resolve_to_ip(value: object) -> str:
@@ -30,6 +30,8 @@ class DeviceBase(BaseModel):
     model_name: str | None = None
     description: str | None = None
     location_text: str | None = None
+    device_type: DeviceType = DeviceType.other
+    is_critical: bool = False
     is_enabled: bool = True
     latitude: Annotated[float, Field(ge=-90.0, le=90.0)] | None = None
     longitude: Annotated[float, Field(ge=-180.0, le=180.0)] | None = None
@@ -50,6 +52,8 @@ class DeviceUpdate(BaseModel):
     model_name: str | None = None
     description: str | None = None
     location_text: str | None = None
+    device_type: DeviceType | None = None
+    is_critical: bool | None = None
     is_enabled: bool | None = None
     latitude: Annotated[float, Field(ge=-90.0, le=90.0)] | None = None
     longitude: Annotated[float, Field(ge=-180.0, le=180.0)] | None = None
@@ -60,6 +64,11 @@ class DeviceUpdate(BaseModel):
         if v is None:
             return None
         return _resolve_to_ip(v)
+
+
+class DeviceSimulate(BaseModel):
+    """Manually force a device's status (test/simulation)."""
+    status: Literal["online", "offline"]
 
 
 class DeviceRead(DeviceBase):

@@ -29,3 +29,6 @@ Thumbs.db
 
 # Alembic compiled cache
 alembic/versions/__pycache__/
+
+# Generated raster basemap tiles (optional, large)
+backend/tiles/

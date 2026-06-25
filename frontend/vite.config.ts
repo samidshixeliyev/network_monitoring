@@ -15,6 +15,11 @@ export default defineConfig({
         target: 'ws://localhost:8000',
         ws: true,
       },
+      // Offline basemap tiles served by the API (backend/tiles/...)
+      '/tiles': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

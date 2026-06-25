@@ -1,18 +1,22 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
+import { AzerbaijanMap } from '../components/AzerbaijanMap'
 import { DeviceDrawer } from '../components/DeviceDrawer'
 import { DeviceForm } from '../components/DeviceForm'
 import { NetworkGraph } from '../components/NetworkGraph'
 import { StatusBadge } from '../components/StatusBadge'
+import { Toaster, type Toast } from '../components/Toaster'
 import { useAuth } from '../hooks/useAuth'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { playAlert } from '../lib/sound'
 import type { Device, DeviceCreate, WsStatusMessage } from '../types'
 
 const WS_PROTO = window.location.protocol === 'https:' ? 'wss' : 'ws'
 
-type View = 'graph' | 'table'
+type View = 'map' | 'graph' | 'table'
+type Coords = { lat: number; lng: number }
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
@@ -32,11 +36,22 @@ export function Dashboard() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const [view, setView] = useState<View>('graph')
+  const [view, setView] = useState<View>('map')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selected, setSelected] = useState<Device | null>(null)
   const [adding, setAdding] = useState(false)
+  const [placing, setPlacing] = useState(false)        // map placement mode
+  const [newCoords, setNewCoords] = useState<Coords | null>(null)
+
+  const startAdd = () => {
+    if (view === 'map') { setPlacing(true) }
+    else { setNewCoords(null); setAdding(true) }
+  }
+  const closeForm = () => { setAdding(false); setNewCoords(null) }
+  const placeAt = (lat: number, lng: number) => {
+    setNewCoords({ lat, lng }); setPlacing(false); setAdding(true)
+  }
 
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list })
 
@@ -45,19 +60,56 @@ export function Dashboard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['devices'] }),
   })
 
+  // ── Toast notifications (with sound, auto-close after 10s) ───────────────
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const closeToast = useCallback((id: string) => {
+    setToasts(t => t.filter(x => x.id !== id))
+  }, [])
+  const addToast = useCallback((kind: 'down' | 'up', dev: Device) => {
+    const id = crypto.randomUUID()
+    const critical = kind === 'down' && dev.is_critical
+    const title = kind === 'down'
+      ? `⚠ ${dev.vendor_name} DOWN oldu`
+      : `✓ ${dev.vendor_name} BƏRPA olundu`
+    const detail = `${dev.ip_address}${dev.location_text ? ' · ' + dev.location_text : ''}`
+    setToasts(t => [...t, { id, kind, critical, title, detail }])
+    // Critical-device down → distinct urgent siren; otherwise standard tones.
+    playAlert(critical ? 'critical' : kind)
+    // Critical alerts stay until acknowledged (quick reaction). Others auto-close after 10s.
+    if (!critical) {
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 10_000)
+    }
+  }, [])
+
   const wsUrl = user ? `${WS_PROTO}://${window.location.host}/ws/status?token=${user.token}` : null
 
   const handleWs = useCallback((raw: string) => {
     const msg = JSON.parse(raw) as WsStatusMessage
-    qc.setQueryData<Device[]>(['devices'], prev =>
-      prev?.map(d => d.id === msg.device_id
+    // Detect the transition against the cached previous status → fire a toast.
+    const prev = qc.getQueryData<Device[]>(['devices'])
+    const dev = prev?.find(d => d.id === msg.device_id)
+    if (dev && dev.current_status !== msg.status) {
+      if (msg.status === 'offline') addToast('down', dev)
+      else if (msg.status === 'online') addToast('up', dev)
+    }
+    qc.setQueryData<Device[]>(['devices'], p =>
+      p?.map(d => d.id === msg.device_id
         ? { ...d, current_status: msg.status, last_checked_at: msg.last_checked_at }
         : d,
       ),
     )
-  }, [qc])
+  }, [qc, addToast])
 
   useWebSocket(wsUrl, handleWs)
+
+  // Keep the open drawer's device in sync with live status changes.
+  useEffect(() => {
+    setSelected(sel => {
+      if (!sel) return sel
+      const fresh = devices.find(d => d.id === sel.id)
+      return fresh && fresh !== sel ? fresh : sel
+    })
+  }, [devices])
 
   // Stats
   const total   = devices.length
@@ -121,7 +173,7 @@ export function Dashboard() {
           <StatCard label="Total Devices" value={total}   color="#1e293b" />
           <StatCard label="Online"         value={online}  color="#16a34a" />
           <StatCard label="Offline"        value={offline} color="#ef4444" />
-          <StatCard label="Unknown"        value={unknown} color="#94a3b8" />
+          <StatCard label="Unknown"        value={unknown} color="#eab308" />
 
           {/* Uptime bar */}
           {total > 0 && (
@@ -148,7 +200,7 @@ export function Dashboard() {
       <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         {/* View toggle */}
         <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 7, padding: 3, gap: 2 }}>
-          {(['graph', 'table'] as View[]).map(v => (
+          {(['map', 'graph', 'table'] as View[]).map(v => (
             <button key={v} onClick={() => setView(v)}
               style={{
                 background: view === v ? '#fff' : 'transparent',
@@ -160,7 +212,7 @@ export function Dashboard() {
                 fontFamily: 'inherit',
                 textTransform: 'capitalize',
               }}>
-              {v === 'graph' ? '⬡ Graph' : '≡ Table'}
+              {v === 'map' ? '🗺 Map' : v === 'graph' ? '⬡ Graph' : '≡ Table'}
             </button>
           ))}
         </div>
@@ -186,9 +238,24 @@ export function Dashboard() {
           <option value="unknown">Unknown</option>
         </select>
 
-        <div style={{ marginLeft: 'auto' }}>
-          {isManager && (
-            <button onClick={() => setAdding(true)}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isManager && placing && (
+            <>
+              <span style={{ fontSize: 12, color: '#1e40af', fontWeight: 600 }}>
+                Xəritəyə klikləyin…
+              </span>
+              <button onClick={() => { setPlacing(false); setNewCoords(null); setAdding(true) }}
+                style={{ background: '#fff', color: '#1e40af', border: '1px solid #c7d2fe', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}>
+                Konumsuz əlavə et
+              </button>
+              <button onClick={() => setPlacing(false)}
+                style={{ background: '#fff', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>
+                Ləğv et
+              </button>
+            </>
+          )}
+          {isManager && !placing && (
+            <button onClick={startAdd}
               style={{ background: '#1e40af', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}>
               + Add Device
             </button>
@@ -199,6 +266,19 @@ export function Dashboard() {
       {/* ── Main area ──────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
         <div style={{ flex: 1, overflow: 'hidden', transition: 'margin-right 0.2s', marginRight: drawerOpen ? 340 : 0 }}>
+
+          {/* Map view */}
+          {view === 'map' && (
+            <div style={{ width: '100%', height: '100%' }}>
+              <AzerbaijanMap
+                devices={search || statusFilter !== 'all' ? filtered : devices}
+                selectedId={selected?.id ?? null}
+                onSelect={d => setSelected(prev => prev?.id === d.id ? null : d)}
+                placing={placing}
+                onMapClick={placeAt}
+              />
+            </div>
+          )}
 
           {/* Graph view */}
           {view === 'graph' && (
@@ -284,10 +364,14 @@ export function Dashboard() {
       {/* Add device modal */}
       {adding && (
         <DeviceForm
+          initialCoords={newCoords ?? undefined}
           onSave={async (data) => { await createM.mutateAsync(data as DeviceCreate) }}
-          onClose={() => setAdding(false)}
+          onClose={closeForm}
         />
       )}
+
+      {/* Status notifications (sound + auto-close) */}
+      <Toaster toasts={toasts} onClose={closeToast} />
     </div>
   )
 }

@@ -1,32 +1,22 @@
 version: "3.9"
 
-services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# NOTE: The database (SQL Server) is expected to run OUTSIDE this compose file
+# — e.g. a local SQLEXPRESS instance on the host. When running the API in
+# Docker, set in .env:
+#   MSSQL_SERVER=host.docker.internal\SQLEXPRESS   (reach the host's instance)
+#   MSSQL_DRIVER=ODBC Driver 18 for SQL Server     (the image installs Driver 18)
+# On Windows + SQLEXPRESS named instances, running the API locally (uvicorn)
+# instead of in Docker is usually simpler — see README.
 
+services:
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     cap_add:
@@ -49,6 +39,3 @@ services:
       - /app/node_modules
     environment:
       VITE_API_URL: http://localhost:8000
-
-volumes:
-  postgres_data:

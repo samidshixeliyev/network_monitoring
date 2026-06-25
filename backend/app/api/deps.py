@@ -31,7 +31,7 @@ async def get_current_user(
     user = await db.scalar(
         select(User)
         .options(selectinload(User.role))
-        .where(User.id == user_id, User.is_active.is_(True))
+        .where(User.id == user_id, User.is_active == True)  # noqa: E712 (MSSQL needs `= 1`, not `IS 1`)
     )
     if user is None:
         raise exc

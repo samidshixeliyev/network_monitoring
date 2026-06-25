@@ -2,10 +2,19 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# ── Microsoft ODBC Driver 18 for SQL Server + build deps ────────────────────
+# Needed by pyodbc/aioodbc to talk to MSSQL. msodbcsql18 comes from Microsoft's
+# apt repo. CAP_NET_RAW (libcap2-bin) is still needed for icmplib raw sockets.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpq-dev \
-        gcc \
-        libcap2-bin \
+        curl gnupg ca-certificates \
+        gcc g++ unixodbc-dev \
+        libcap2-bin iputils-ping \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+        | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
+        > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

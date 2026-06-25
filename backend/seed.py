@@ -15,7 +15,7 @@ _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 async def seed() -> None:
-    engine = create_async_engine(settings.DATABASE_URL)
+    engine = create_async_engine(settings.sqlalchemy_url)
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     async with Session() as session:

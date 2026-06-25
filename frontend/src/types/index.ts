@@ -1,4 +1,5 @@
 export type DeviceStatus = 'online' | 'offline' | 'unknown'
+export type DeviceType = 'router' | 'switch' | 'server' | 'firewall' | 'access_point' | 'other'
 export type EventType = 'came_online' | 'went_offline'
 export type UserRole = 'manager' | 'user'
 
@@ -9,6 +10,10 @@ export interface Device {
   model_name: string | null
   description: string | null
   location_text: string | null
+  latitude: number | null
+  longitude: number | null
+  device_type: DeviceType
+  is_critical: boolean
   is_enabled: boolean
   current_status: DeviceStatus
   last_checked_at: string | null
@@ -23,6 +28,10 @@ export interface DeviceCreate {
   model_name?: string
   description?: string
   location_text?: string
+  device_type?: DeviceType
+  is_critical?: boolean
+  latitude?: number | null
+  longitude?: number | null
   is_enabled?: boolean
 }
 

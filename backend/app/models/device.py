@@ -14,10 +14,11 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
-    Text,
+    Unicode,
+    UnicodeText,
+    Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -33,20 +34,42 @@ class DeviceStatus(str, enum.Enum):
     unknown = "unknown"
 
 
+class DeviceType(str, enum.Enum):
+    router = "router"
+    switch = "switch"
+    server = "server"
+    firewall = "firewall"
+    access_point = "access_point"
+    other = "other"
+
+
 class Device(Base):
     __tablename__ = "devices"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    vendor_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    ip_address: Mapped[str] = mapped_column(INET(), unique=True, nullable=False)
-    model_name: Mapped[str | None] = mapped_column(String(100))
-    description: Mapped[str | None] = mapped_column(Text)
-    location_text: Mapped[str | None] = mapped_column(String(255))
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Unicode/UnicodeText → NVARCHAR on MSSQL so Azerbaijani text (ə, ş, ç…)
+    # stores correctly; plain VARCHAR loses chars outside the DB code page.
+    vendor_name: Mapped[str] = mapped_column(Unicode(100), nullable=False)
+    # IP/hostname resolved to an IP string. ASCII only → plain VARCHAR(45)
+    # holds the longest possible IPv6 address.
+    ip_address: Mapped[str] = mapped_column(String(45), unique=True, nullable=False)
+    model_name: Mapped[str | None] = mapped_column(Unicode(100))
+    description: Mapped[str | None] = mapped_column(UnicodeText)
+    location_text: Mapped[str | None] = mapped_column(Unicode(255))
+    # Drives the map icon (router/switch/server/…). VARCHAR + CHECK (portable).
+    device_type: Mapped[DeviceType] = mapped_column(
+        SAEnum(DeviceType, name="device_type", native_enum=False, length=20),
+        default=DeviceType.other,
+        server_default=DeviceType.other.value,
+        nullable=False,
+    )
     # Phase-2 map fields — present now so no migration is needed later
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+    # native_enum=False → portable VARCHAR + CHECK constraint (MSSQL has no
+    # native ENUM type).
     current_status: Mapped[DeviceStatus] = mapped_column(
-        SAEnum(DeviceStatus, name="device_status"),
+        SAEnum(DeviceStatus, name="device_status", native_enum=False, length=20),
         default=DeviceStatus.unknown,
         server_default=DeviceStatus.unknown.value,
         nullable=False,
@@ -55,6 +78,10 @@ class Device(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Critical/important device → distinct, higher-priority alert on the frontend.
+    is_critical: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

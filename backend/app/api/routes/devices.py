@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -6,9 +7,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
+from app.core.config import settings
 from app.db.session import get_db
-from app.models import Device, User
-from app.schemas.device import DeviceCreate, DeviceRead, DeviceUpdate
+from app.models import Device, EventLog, User
+from app.models.device import DeviceStatus
+from app.models.event_log import EventType
+from app.schemas.device import DeviceCreate, DeviceRead, DeviceSimulate, DeviceUpdate
+from app.services.ws_manager import ws_manager
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
@@ -69,6 +74,44 @@ async def update_device(
         await db.rollback()
         raise HTTPException(status_code=409, detail="A device with this IP address already exists")
     await db.refresh(device)
+    return device
+
+
+@router.post("/{device_id}/simulate", response_model=DeviceRead)
+async def simulate_device_status(
+    device_id: uuid.UUID,
+    body: DeviceSimulate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("manager")),
+) -> Device:
+    """Manually mark a device online/offline (testing). Logs an event and
+    broadcasts the change exactly like the real ping loop would."""
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    new_status = DeviceStatus(body.status)
+    now = datetime.now(timezone.utc)
+    prev_status = device.current_status
+
+    device.last_checked_at = now
+    device.current_status = new_status
+    device.consecutive_failures = 0 if new_status == DeviceStatus.online else settings.FLAP_THRESHOLD
+
+    if new_status != prev_status:
+        event_type = (
+            EventType.came_online
+            if new_status == DeviceStatus.online
+            else EventType.went_offline
+        )
+        db.add(EventLog(device_id=device.id, event_type=event_type))
+
+    await db.commit()
+    await db.refresh(device)
+
+    if new_status != prev_status:
+        await ws_manager.broadcast(device.id, new_status.value, now)
+
     return device
 
 

@@ -1,9 +1,8 @@
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
 config = context.config
@@ -13,19 +12,20 @@ if config.config_file_name is not None:
 
 # All models must be imported before target_metadata is read so the mapper
 # registry is fully populated and autogenerate can diff the full schema.
+from app.core.config import settings  # noqa: E402
 from app.models import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
-# Override the placeholder URL in alembic.ini with the real env var at runtime
-if db_url := os.getenv("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", db_url)
+# Build the URL from app settings (assembled aioodbc/odbc_connect string).
+# We pass it straight to create_async_engine rather than through alembic.ini so
+# configparser does not try to interpolate the '%'-encoded odbc_connect value.
+DB_URL = settings.sqlalchemy_url
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=DB_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -41,11 +41,7 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_async_engine(DB_URL, poolclass=pool.NullPool)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

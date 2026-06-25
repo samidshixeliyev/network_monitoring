@@ -3,7 +3,7 @@ import type { DeviceStatus } from '../types'
 const cfg: Record<DeviceStatus, { label: string; dot: string; bg: string; text: string }> = {
   online:  { label: 'Online',  dot: '#16a34a', bg: '#dcfce7', text: '#166534' },
   offline: { label: 'Offline', dot: '#dc2626', bg: '#fee2e2', text: '#991b1b' },
-  unknown: { label: 'Unknown', dot: '#9ca3af', bg: '#f3f4f6', text: '#4b5563' },
+  unknown: { label: 'Unknown', dot: '#eab308', bg: '#fef9c3', text: '#854d0e' },
 }
 
 export function StatusBadge({ status }: { status: DeviceStatus }) {

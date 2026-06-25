@@ -5,6 +5,7 @@ import { fetchEvents } from '../api/events'
 import { DeviceForm } from './DeviceForm'
 import { StatusBadge } from './StatusBadge'
 import type { Device, DeviceUpdate } from '../types'
+import { DEVICE_TYPE_LABELS } from '../lib/deviceIcons'
 
 const EVT_LABEL = { came_online: '↑ Came Online', went_offline: '↓ Went Offline' } as const
 const EVT_COLOR = { came_online: '#16a34a', went_offline: '#ef4444' } as const
@@ -37,11 +38,24 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }); setEditing(false) },
   })
 
+  const simM = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'online' | 'offline' }) =>
+      devicesApi.simulate(id, status),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
+  })
+
   if (!device) return null
 
+  const coords = device.latitude != null && device.longitude != null
+    ? `${device.latitude.toFixed(5)}, ${device.longitude.toFixed(5)}`
+    : null
+
   const meta: [string, string | null | undefined][] = [
+    ['Priority', device.is_critical ? '⚠ Kritik' : null],
+    ['Type', DEVICE_TYPE_LABELS[device.device_type]],
     ['Model', device.model_name],
     ['Location', device.location_text],
+    ['Coordinates', coords],
     ['Description', device.description],
     ['Ping', device.is_enabled ? 'Enabled' : 'Disabled'],
   ]
@@ -115,6 +129,31 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
               </span>
             </div>
           </div>
+
+          {/* Manual status simulation (testing) */}
+          {isManager && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                Test: status idarəsi
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => simM.mutate({ id: device.id, status: 'online' })}
+                  disabled={simM.isPending || device.current_status === 'online'}
+                  style={{ flex: 1, padding: '7px', borderRadius: 6, border: '1px solid #86efac', background: device.current_status === 'online' ? '#dcfce7' : '#fff', color: '#16a34a', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600, opacity: device.current_status === 'online' ? 0.6 : 1 }}
+                >
+                  ▲ Up et
+                </button>
+                <button
+                  onClick={() => simM.mutate({ id: device.id, status: 'offline' })}
+                  disabled={simM.isPending || device.current_status === 'offline'}
+                  style={{ flex: 1, padding: '7px', borderRadius: 6, border: '1px solid #fca5a5', background: device.current_status === 'offline' ? '#fee2e2' : '#fff', color: '#ef4444', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600, opacity: device.current_status === 'offline' ? 0.6 : 1 }}
+                >
+                  ▼ Down et
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Manager actions */}
           {isManager && (

@@ -30,6 +30,11 @@ LAB = [
     ("Juniper SRX340",      "172.30.0.14", "SRX340",  "firewall", True,  "Lənkəran", 38.7529, 48.8508),
 ]
 
+# All lab device containers run sshd with these credentials (see
+# lab/device/Dockerfile + DEVICE_ROOT_PASSWORD in lab/docker-compose.yml).
+SSH_USER = "root"
+SSH_PASS = "Lab_Dev1ce!"
+
 
 async def seed() -> None:
     engine = create_async_engine(settings.sqlalchemy_url)
@@ -51,12 +56,18 @@ async def seed() -> None:
                 exists.device_type = dtype
                 exists.is_critical = crit
                 exists.location_text = city
+                exists.ssh_enabled = True
+                exists.ssh_username = SSH_USER
+                exists.ssh_password = SSH_PASS
+                exists.ssh_port = 22
                 continue
             session.add(
                 Device(
                     vendor_name=vendor, ip_address=ip, model_name=model,
                     device_type=dtype, is_critical=crit, location_text=city,
                     latitude=lat, longitude=lon, created_by=manager.id,
+                    ssh_enabled=True, ssh_username=SSH_USER, ssh_password=SSH_PASS,
+                    ssh_port=22,
                 )
             )
             created += 1

@@ -12,7 +12,14 @@ from app.db.session import get_db
 from app.models import Device, EventLog, User
 from app.models.device import DeviceStatus
 from app.models.event_log import EventType
-from app.schemas.device import DeviceCreate, DeviceRead, DeviceSimulate, DeviceUpdate
+from app.schemas.device import (
+    DeviceCreate,
+    DeviceRead,
+    DeviceSimulate,
+    DeviceUpdate,
+    SshCheckResult,
+)
+from app.services.ssh_collector import collect_device
 from app.services.ws_manager import ws_manager
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -113,6 +120,26 @@ async def simulate_device_status(
         await ws_manager.broadcast(device.id, new_status.value, now)
 
     return device
+
+
+@router.post("/{device_id}/ssh-check", response_model=SshCheckResult)
+async def ssh_check_device(
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("manager")),
+) -> SshCheckResult:
+    """Collect SSH facts (hostname/uptime/interfaces) from a device right now and
+    persist them. Requires ssh_enabled + credentials on the device."""
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not device.ssh_enabled:
+        raise HTTPException(status_code=400, detail="SSH is not enabled for this device")
+
+    result = await collect_device(device_id)
+    if result is None:
+        raise HTTPException(status_code=400, detail="SSH is not configured for this device")
+    return SshCheckResult(**result)
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)

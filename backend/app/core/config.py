@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # manual /simulate endpoint — useful for demos without real devices.
     SIMULATION_MODE: bool = False
 
+    # ── SSH telemetry collector ─────────────────────────────────────────────
+    # When enabled, a background loop logs into ssh_enabled devices and pulls
+    # facts (hostname/uptime/interfaces) on top of ICMP up/down.
+    SSH_ENABLED: bool = False
+    SSH_POLL_INTERVAL_SECONDS: int = 60
+    SSH_CONNECT_TIMEOUT_SECONDS: int = 8
+
     DEFAULT_MANAGER_EMAIL: str = "admin@example.com"
     DEFAULT_MANAGER_PASSWORD: str = "changeme"
 

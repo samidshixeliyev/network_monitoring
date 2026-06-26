@@ -49,12 +49,64 @@ failed check **red (offline)** → critical siren + KRİTİK toast.
 docker start cisco-isr-baki          # back online (green)
 ```
 
-| Container | IP | Role | Critical |
-|---|---|---|---|
-| `cisco-isr-baki`       | 172.30.0.11 | Cisco ISR 4331 (router)      | ✔ |
-| `juniper-mx-ganja`     | 172.30.0.12 | Juniper MX204 (router)       |   |
-| `cisco-cat-sumqayit`   | 172.30.0.13 | Cisco Catalyst 9300 (switch) |   |
-| `juniper-srx-lankaran` | 172.30.0.14 | Juniper SRX340 (firewall)    | ✔ |
+### Or toggle just the interface (port up/down)
+
+To test like a real config change — shut the device's port instead of killing
+the whole container — each device has a `port` helper (needs the `NET_ADMIN`
+cap, already set in compose):
+
+```bash
+docker exec cisco-isr-baki port down     # eth0 DOWN → online→unknown→offline
+docker exec cisco-isr-baki port up        # eth0 UP   → back online
+docker exec cisco-isr-baki port flap 30   # DOWN 30s, then auto-UP
+docker exec cisco-isr-baki port status    # show interface state
+```
+
+You can also run these from inside an SSH session (`ssh root@localhost -p 2211`),
+but note `port down` cuts your own SSH (it runs over eth0) — use `port flap`
+there so it auto-restores, or run `up`/`down` from the host as above.
+
+| Container | IP | SSH (host) | Role | Critical |
+|---|---|---|---|---|
+| `cisco-isr-baki`       | 172.30.0.11 | `localhost:2211` | Cisco ISR 4331 (router)      | ✔ |
+| `juniper-mx-ganja`     | 172.30.0.12 | `localhost:2212` | Juniper MX204 (router)       |   |
+| `cisco-cat-sumqayit`   | 172.30.0.13 | `localhost:2213` | Cisco Catalyst 9300 (switch) |   |
+| `juniper-srx-lankaran` | 172.30.0.14 | `localhost:2214` | Juniper SRX340 (firewall)    | ✔ |
+
+## SSH — connect to a device & telemetry
+
+The device containers run `sshd` (Alpine + openssh, built from `device/`). Two uses:
+
+**1. Log in manually** (from WSL or Windows):
+
+```bash
+ssh root@localhost -p 2211        # cisco-isr-baki   (password: Lab_Dev1ce!)
+# or, from inside the lab network / always works:
+docker exec -it cisco-isr-baki sh
+```
+
+> It's a Linux shell, not a real router CLI. For real `show` commands swap the
+> image for Nokia SR Linux / Arista cEOS / FRR (see the section below).
+
+**Console access (out-of-band — survives the port going down).** SSH runs over
+`eth0`, so `port down` kills your SSH. To get in regardless — like a serial
+console on real gear — use the Docker daemon path instead of the network:
+
+```bash
+./console.sh cisco-isr-baki          # convenience helper (partial name ok)
+# or directly:
+docker exec -it cisco-isr-baki sh
+```
+
+This works even with `eth0` DOWN, so you can `port up` from the console to bring
+the interface back.
+
+**2. The monitor collects facts over SSH.** With `SSH_ENABLED=true` (set in the
+compose `api`), a background collector logs into every `ssh_enabled` device every
+`SSH_POLL_INTERVAL_SECONDS` and stores **hostname, uptime, interfaces, kernel**.
+In the UI open a device → **SSH telemetriya** panel, or hit **⟳ SSH ilə indi
+yoxla** for an on-demand pull (`POST /api/devices/{id}/ssh-check`). The 4 lab
+devices are seeded with `root` / `Lab_Dev1ce!` automatically.
 
 ## Using REAL Cisco / Juniper / other NOS images
 

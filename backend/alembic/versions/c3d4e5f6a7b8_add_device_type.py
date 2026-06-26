@@ -21,7 +21,22 @@ device_type_enum = sa.Enum(
 )
 
 
+def _column_exists(table: str, column: str) -> bool:
+    bind = op.get_bind()
+    return bool(
+        bind.exec_driver_sql(
+            "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS "
+            f"WHERE TABLE_NAME = '{table}' AND COLUMN_NAME = '{column}'"
+        ).first()
+    )
+
+
 def upgrade() -> None:
+    # Idempotent: the rewritten initial_schema already creates this column on a
+    # fresh DB, so skip the add when it is already present (existing DBs that
+    # predate that rewrite still get it added here).
+    if _column_exists("devices", "device_type"):
+        return
     op.add_column(
         "devices",
         sa.Column("device_type", device_type_enum, nullable=False, server_default="other"),

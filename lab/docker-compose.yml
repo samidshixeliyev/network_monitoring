@@ -30,6 +30,9 @@ services:
       MSSQL_SA_PASSWORD: "Lab_Str0ng_Pass!"
       MSSQL_PID: "Express"
     networks: [netlab]
+    restart: unless-stopped
+    volumes:
+      - mssql-data:/var/opt/mssql
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
       interval: 10s
@@ -37,41 +40,73 @@ services:
       retries: 12
       start_period: 30s
 
-  # ── "Network devices" — real, pingable containers (static IPs) ─────────────
+  # ── "Network devices" — pingable + SSH-able containers (static IPs) ─────────
+  # Built from ./device (Alpine + sshd + iproute2). Reply to ICMP and accept
+  # SSH (root / Lab_Dev1ce!). SSH is published to the host as 2211-2214 so you
+  # can `ssh root@localhost -p 2211` from WSL/Windows; inside the lab network the
+  # monitor reaches them on :22 directly. All 4 share one built image.
   cisco-isr-baki:
-    image: alpine:3.20
+    build: ./device
+    image: netmon-lab-device
     container_name: cisco-isr-baki
-    command: ["tail", "-f", "/dev/null"]
+    hostname: cisco-isr-baki
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
     networks:
       netlab:
         ipv4_address: 172.30.0.11
+    ports:
+      - "2211:22"
+    cap_add:
+      - NET_ADMIN          # lets `port down/up` toggle eth0 to test alerts
     restart: unless-stopped
 
   juniper-mx-ganja:
-    image: alpine:3.20
+    build: ./device
+    image: netmon-lab-device
     container_name: juniper-mx-ganja
-    command: ["tail", "-f", "/dev/null"]
+    hostname: juniper-mx-ganja
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
     networks:
       netlab:
         ipv4_address: 172.30.0.12
+    ports:
+      - "2212:22"
+    cap_add:
+      - NET_ADMIN
     restart: unless-stopped
 
   cisco-cat-sumqayit:
-    image: alpine:3.20
+    build: ./device
+    image: netmon-lab-device
     container_name: cisco-cat-sumqayit
-    command: ["tail", "-f", "/dev/null"]
+    hostname: cisco-cat-sumqayit
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
     networks:
       netlab:
         ipv4_address: 172.30.0.13
+    ports:
+      - "2213:22"
+    cap_add:
+      - NET_ADMIN
     restart: unless-stopped
 
   juniper-srx-lankaran:
-    image: alpine:3.20
+    build: ./device
+    image: netmon-lab-device
     container_name: juniper-srx-lankaran
-    command: ["tail", "-f", "/dev/null"]
+    hostname: juniper-srx-lankaran
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
     networks:
       netlab:
         ipv4_address: 172.30.0.14
+    ports:
+      - "2214:22"
+    cap_add:
+      - NET_ADMIN
     restart: unless-stopped
 
   # ── Monitoring backend (probes the devices over ICMP) ──────────────────────
@@ -91,15 +126,20 @@ services:
       MSSQL_ENCRYPT: "yes"
       MSSQL_TRUST_CERT: "yes"
       SECRET_KEY: lab-secret-change-me-0123456789abcdef
+      ENVIRONMENT: production
       SIMULATION_MODE: "false"
       # Inside the container icmplib works (NET_RAW cap granted in the image).
       PING_METHOD: icmplib
       PING_INTERVAL_SECONDS: "15"
       PING_COUNT: "3"
       FLAP_THRESHOLD: "2"
+      # SSH telemetry collector (logs into the device containers over SSH).
+      SSH_ENABLED: "true"
+      SSH_POLL_INTERVAL_SECONDS: "30"
       DEFAULT_MANAGER_EMAIL: admin@example.com
       DEFAULT_MANAGER_PASSWORD: changeme
     networks: [netlab]
+    restart: unless-stopped
     ports:
       - "8000:8000"
     cap_add:
@@ -112,3 +152,6 @@ services:
              python seed.py &&
              python seed_lab_devices.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  mssql-data:

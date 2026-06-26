@@ -1,0 +1,5 @@
+# Shell scripts must stay LF — they run inside Linux containers; CRLF breaks the
+# shebang. (The device image also strips CR defensively, but keep them clean.)
+*.sh text eol=lf
+lab/device/port text eol=lf
+lab/device/entrypoint.sh text eol=lf

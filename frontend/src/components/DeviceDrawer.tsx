@@ -3,9 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
 import { fetchEvents } from '../api/events'
 import { DeviceForm } from './DeviceForm'
+import { WebShell } from './WebShell'
 import { StatusBadge } from './StatusBadge'
-import type { Device, DeviceUpdate } from '../types'
+import type { Device, DeviceUpdate, SshFacts } from '../types'
 import { DEVICE_TYPE_LABELS } from '../lib/deviceIcons'
+
+const SSH_STATUS: Record<string, { label: string; color: string }> = {
+  ok:          { label: 'OK',            color: '#16a34a' },
+  auth_failed: { label: 'Auth xətası',   color: '#ef4444' },
+  unreachable: { label: 'Əlçatmaz',      color: '#ef4444' },
+  error:       { label: 'Xəta',          color: '#f59e0b' },
+  unknown:     { label: 'Yoxlanmayıb',   color: '#94a3b8' },
+}
 
 const EVT_LABEL = { came_online: '↑ Came Online', went_offline: '↓ Went Offline' } as const
 const EVT_COLOR = { came_online: '#16a34a', went_offline: '#ef4444' } as const
@@ -19,8 +28,9 @@ interface Props {
 export function DeviceDrawer({ device, isManager, onClose }: Props) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
+  const [showShell, setShowShell] = useState(false)
 
-  useEffect(() => { setEditing(false) }, [device?.id])
+  useEffect(() => { setEditing(false); setShowShell(false) }, [device?.id])
 
   const { data: eventsData } = useQuery({
     queryKey: ['device-events', device?.id],
@@ -44,11 +54,20 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
   })
 
+  const sshM = useMutation({
+    mutationFn: (id: string) => devicesApi.sshCheck(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
+  })
+
   if (!device) return null
 
   const coords = device.latitude != null && device.longitude != null
     ? `${device.latitude.toFixed(5)}, ${device.longitude.toFixed(5)}`
     : null
+
+  let sshFacts: SshFacts | null = null
+  try { sshFacts = device.ssh_facts ? JSON.parse(device.ssh_facts) as SshFacts : null } catch { /* ignore */ }
+  const sshSt = SSH_STATUS[device.ssh_status] ?? SSH_STATUS.unknown
 
   const meta: [string, string | null | undefined][] = [
     ['Priority', device.is_critical ? '⚠ Kritik' : null],
@@ -69,6 +88,8 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
           onClose={() => setEditing(false)}
         />
       )}
+
+      {showShell && <WebShell device={device} onClose={() => setShowShell(false)} />}
 
       {/* Slide-in drawer */}
       <aside
@@ -129,6 +150,63 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
               </span>
             </div>
           </div>
+
+          {/* SSH telemetry */}
+          {device.ssh_enabled && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  SSH telemetriya
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: sshSt.color }}>● {sshSt.label}</span>
+              </div>
+              <div style={{ background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: 8, padding: '10px 13px', fontSize: 13 }}>
+                {[
+                  ['Hostname', device.ssh_hostname],
+                  ['Uptime', device.ssh_uptime],
+                  ['Kernel', sshFacts?.kernel],
+                ].filter(([, v]) => v).map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <span style={{ color: '#64748b' }}>{k}</span>
+                    <span style={{ color: '#0f172a', fontWeight: 500, fontFamily: 'monospace', textAlign: 'right', marginLeft: 8 }}>{v}</span>
+                  </div>
+                ))}
+                {sshFacts?.interfaces && sshFacts.interfaces.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ color: '#64748b', marginBottom: 4 }}>Interfeyslər</div>
+                    {sshFacts.interfaces.map(i => (
+                      <div key={i.name} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace', fontSize: 12 }}>
+                        <span style={{ color: '#0f766e', fontWeight: 600 }}>{i.name}</span>
+                        <span style={{ color: '#0f172a' }}>{i.ipv4}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>
+                  {device.ssh_collected_at
+                    ? `Toplandı: ${new Date(device.ssh_collected_at).toLocaleTimeString()}`
+                    : 'Hələ toplanmayıb'}
+                </div>
+              </div>
+              {isManager && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    onClick={() => sshM.mutate(device.id)}
+                    disabled={sshM.isPending}
+                    style={{ flex: 1, padding: '7px', borderRadius: 6, border: '1px solid #5eead4', background: '#fff', color: '#0f766e', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600, opacity: sshM.isPending ? 0.6 : 1 }}
+                  >
+                    {sshM.isPending ? 'Yoxlanılır…' : '⟳ SSH yoxla'}
+                  </button>
+                  <button
+                    onClick={() => setShowShell(true)}
+                    style={{ flex: 1, padding: '7px', borderRadius: 6, border: 'none', background: '#0f172a', color: '#5eead4', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600 }}
+                  >
+                    🖥️ Web terminal
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Manual status simulation (testing) */}
           {isManager && (

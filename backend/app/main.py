@@ -15,15 +15,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.services.ping_scheduler import ping_loop
+    from app.services.ssh_collector import ssh_poll_loop
 
-    task = asyncio.create_task(ping_loop())
+    tasks = [asyncio.create_task(ping_loop()), asyncio.create_task(ssh_poll_loop())]
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-    logger.info("ping loop stopped")
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    logger.info("background loops stopped")
 
 
 app = FastAPI(title="Network Monitor", version="0.1.0", lifespan=lifespan)

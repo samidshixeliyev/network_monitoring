@@ -13,4 +13,5 @@ passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
 python-jose[cryptography]==3.3.0
 icmplib==3.0.4
+asyncssh==2.18.0
 python-multipart==0.0.19

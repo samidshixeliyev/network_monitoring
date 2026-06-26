@@ -35,6 +35,10 @@ class DeviceBase(BaseModel):
     is_enabled: bool = True
     latitude: Annotated[float, Field(ge=-90.0, le=90.0)] | None = None
     longitude: Annotated[float, Field(ge=-180.0, le=180.0)] | None = None
+    # SSH telemetry config (the password is write-only — see DeviceCreate/Update).
+    ssh_enabled: bool = False
+    ssh_port: Annotated[int, Field(ge=1, le=65535)] = 22
+    ssh_username: str | None = None
 
     @field_validator("ip_address", mode="before")
     @classmethod
@@ -43,7 +47,7 @@ class DeviceBase(BaseModel):
 
 
 class DeviceCreate(DeviceBase):
-    pass
+    ssh_password: str | None = None
 
 
 class DeviceUpdate(BaseModel):
@@ -57,6 +61,10 @@ class DeviceUpdate(BaseModel):
     is_enabled: bool | None = None
     latitude: Annotated[float, Field(ge=-90.0, le=90.0)] | None = None
     longitude: Annotated[float, Field(ge=-180.0, le=180.0)] | None = None
+    ssh_enabled: bool | None = None
+    ssh_port: Annotated[int, Field(ge=1, le=65535)] | None = None
+    ssh_username: str | None = None
+    ssh_password: str | None = None
 
     @field_validator("ip_address", mode="before")
     @classmethod
@@ -77,6 +85,21 @@ class DeviceRead(DeviceBase):
     id: uuid.UUID
     current_status: DeviceStatus
     last_checked_at: datetime | None
+    # SSH telemetry (read-only; password is never returned)
+    ssh_status: str
+    ssh_hostname: str | None
+    ssh_uptime: str | None
+    ssh_facts: str | None
+    ssh_collected_at: datetime | None
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+
+class SshCheckResult(BaseModel):
+    """On-demand SSH collection result returned by POST /{id}/ssh-check."""
+    status: str
+    detail: str | None = None
+    hostname: str | None = None
+    uptime: str | None = None
+    facts: dict | None = None

@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Device, DeviceCreate, DeviceUpdate } from '../types'
+import type { Device, DeviceCreate, DeviceUpdate, SshCheckResult } from '../types'
 
 export const devicesApi = {
   list: async (): Promise<Device[]> => {
@@ -19,6 +19,10 @@ export const devicesApi = {
   },
   simulate: async (id: string, status: 'online' | 'offline'): Promise<Device> => {
     const { data } = await apiClient.post<Device>(`/devices/${id}/simulate`, { status })
+    return data
+  },
+  sshCheck: async (id: string): Promise<SshCheckResult> => {
+    const { data } = await apiClient.post<SshCheckResult>(`/devices/${id}/ssh-check`, {})
     return data
   },
 }

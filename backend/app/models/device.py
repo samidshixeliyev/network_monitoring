@@ -82,6 +82,26 @@ class Device(Base):
     is_critical: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # ── SSH telemetry (optional, per-device) ────────────────────────────────
+    # When ssh_enabled, a background collector logs in over SSH and pulls a few
+    # facts (hostname/uptime/interfaces) — richer than ICMP up/down. Credentials
+    # are stored for the lab; in production prefer a secrets store / SSH keys.
+    ssh_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    ssh_port: Mapped[int] = mapped_column(Integer, default=22, server_default="22", nullable=False)
+    ssh_username: Mapped[str | None] = mapped_column(Unicode(100))
+    ssh_password: Mapped[str | None] = mapped_column(Unicode(255))
+    # Last collection result: unknown | ok | auth_failed | unreachable | error
+    ssh_status: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown", nullable=False
+    )
+    ssh_hostname: Mapped[str | None] = mapped_column(Unicode(255))
+    ssh_uptime: Mapped[str | None] = mapped_column(Unicode(255))
+    # JSON blob of additional facts (interfaces, etc.) collected over SSH.
+    ssh_facts: Mapped[str | None] = mapped_column(UnicodeText)
+    ssh_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

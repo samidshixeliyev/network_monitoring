@@ -1,0 +1,35 @@
+#!/bin/sh
+# Bring the monitored interface up/down to test how the monitor reacts.
+#
+#   port down            # interface DOWN  → monitor: online → unknown → offline
+#   port up              # interface UP    → monitor: offline → online
+#   port flap [seconds]  # DOWN for N s (default 30) then auto-UP
+#   port status          # show the interface state
+#
+# NOTE: the device's SSH also runs over this interface, so `port down` drops
+# your SSH session. Either use `port flap` (auto-restores), or run up/down from
+# the host:   docker exec cisco-isr-baki port up
+IFACE="${PORT_IFACE:-eth0}"
+
+case "$1" in
+  down)
+    ip link set "$IFACE" down && echo "$IFACE DOWN"
+    ;;
+  up)
+    ip link set "$IFACE" up && echo "$IFACE UP"
+    ;;
+  flap)
+    secs="${2:-30}"
+    # Detach in a new session so it survives the SSH session dropping when the
+    # link goes down, then brings the interface back up after N seconds.
+    setsid sh -c "ip link set $IFACE down; sleep $secs; ip link set $IFACE up" >/dev/null 2>&1 &
+    echo "$IFACE → DOWN for ${secs}s, then auto-UP (your SSH will drop; reconnect after)"
+    ;;
+  status|"")
+    ip -br link show "$IFACE" 2>/dev/null || ip link show "$IFACE"
+    ;;
+  *)
+    echo "usage: port {down|up|flap [seconds]|status}"
+    exit 1
+    ;;
+esac

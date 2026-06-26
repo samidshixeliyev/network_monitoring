@@ -42,6 +42,10 @@ export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
     longitude:     coordStr(device?.longitude, initialCoords?.lng),
     is_critical:   device?.is_critical   ?? false,
     is_enabled:    device?.is_enabled    ?? true,
+    ssh_enabled:   device?.ssh_enabled   ?? false,
+    ssh_username:  device?.ssh_username  ?? '',
+    ssh_password:  '',
+    ssh_port:      String(device?.ssh_port ?? 22),
   })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -64,6 +68,12 @@ export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
         longitude:     form.longitude === '' ? null : Number(form.longitude),
         is_critical:   form.is_critical,
         is_enabled:    form.is_enabled,
+        ssh_enabled:   form.ssh_enabled,
+        ssh_port:      form.ssh_port === '' ? 22 : Number(form.ssh_port),
+        ssh_username:  form.ssh_username || null,
+        // Only send the password when the user typed one (keeps the stored
+        // password on edit if left blank).
+        ...(form.ssh_password ? { ssh_password: form.ssh_password } : {}),
       })
       onClose()
     } catch (err: unknown) {
@@ -165,6 +175,37 @@ export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
                 onChange={(e) => set('is_critical', e.target.checked)} />
               ⚠ Kritik / vacib cihaz (təcili səsli xəbərdarlıq)
             </label>
+
+            {/* ── SSH telemetry ──────────────────────────────────────────── */}
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12, marginTop: 2 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#0f766e' }}>
+                <input type="checkbox" checked={form.ssh_enabled}
+                  onChange={(e) => set('ssh_enabled', e.target.checked)} />
+                SSH ilə məlumat topla (hostname / uptime / interfeyslər)
+              </label>
+              {form.ssh_enabled && (
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: 12, marginTop: 10 }}>
+                  <div>
+                    <label style={label}>SSH user</label>
+                    <input style={field} value={form.ssh_username} placeholder="root"
+                      onChange={(e) => set('ssh_username', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={label}>SSH password</label>
+                    <input style={field} type="password"
+                      value={form.ssh_password}
+                      placeholder={device?.ssh_username ? '•••••• (dəyişmə)' : ''}
+                      onChange={(e) => set('ssh_password', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={label}>Port</label>
+                    <input style={{ ...field, fontFamily: 'monospace' }} type="number" min={1} max={65535}
+                      value={form.ssh_port}
+                      onChange={(e) => set('ssh_port', e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {error && (

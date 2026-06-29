@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 DEVICES_KEY = "devices:full"
 CHANGES_CHANNEL = "status:changes"
 HEARTBEAT_KEY = "collector:heartbeat"
+VERSION_KEY = "devices:schema_version"
+# Bump whenever the cached device shape (DeviceRead) changes, so a stale cache
+# from before a schema migration is treated as cold and re-warmed from the DB.
+CACHE_VERSION = "2"
 
 _redis: redis.Redis | None = None
 
@@ -70,15 +74,21 @@ async def close_redis() -> None:
 
 # ── Snapshot cache (devices:full) ────────────────────────────────────────────
 async def warm_devices(serialized: list[dict[str, Any]]) -> None:
-    """Replace the whole snapshot hash with the given serialized devices.
-    Called on startup to seed the cache from Postgres."""
+    """Replace the whole snapshot hash with the given serialized devices and
+    stamp the cache schema version. Called on startup to seed from Postgres."""
     r = get_redis()
     pipe = r.pipeline()
     pipe.delete(DEVICES_KEY)
     if serialized:
         pipe.hset(DEVICES_KEY, mapping={d["id"]: json.dumps(d) for d in serialized})
+    pipe.set(VERSION_KEY, CACHE_VERSION)
     await pipe.execute()
     logger.info("device snapshot cache warmed with %d device(s)", len(serialized))
+
+
+async def cache_is_current() -> bool:
+    """True if the cached device shape matches the current code version."""
+    return await get_redis().get(VERSION_KEY) == CACHE_VERSION
 
 
 async def get_all_devices() -> list[dict[str, Any]]:

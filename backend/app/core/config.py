@@ -68,6 +68,23 @@ class Settings(BaseSettings):
     SSH_POLL_INTERVAL_SECONDS: int = 60
     SSH_CONNECT_TIMEOUT_SECONDS: int = 8
 
+    # ── Alerting / escalation (email via SMTP) ──────────────────────────────
+    ALERT_ENABLED: bool = False
+    # A device must stay down at least this long before an alert is sent.
+    ALERT_AFTER_SECONDS: int = 120
+    # Only critical devices trigger alerts when True; all devices when False.
+    ALERT_CRITICAL_ONLY: bool = True
+    ALERT_CHECK_INTERVAL_SECONDS: int = 30
+    # SMTP (use an internal mail relay on an air-gapped network).
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 25
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "netmon@example.com"
+    SMTP_TLS: bool = False
+    # Comma-separated recipient list.
+    ALERT_EMAIL_TO: str = ""
+
     DEFAULT_MANAGER_EMAIL: str = "admin@example.com"
     DEFAULT_MANAGER_PASSWORD: str = "changeme"
 

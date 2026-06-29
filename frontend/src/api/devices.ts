@@ -31,4 +31,16 @@ export const devicesApi = {
     })
     return data
   },
+  ack: async (id: string): Promise<Device> => {
+    const { data } = await apiClient.post<Device>(`/devices/${id}/ack`, {})
+    return data
+  },
+  mute: async (id: string, muted: boolean): Promise<Device> => {
+    const { data } = await apiClient.post<Device>(`/devices/${id}/mute`, { muted })
+    return data
+  },
+  maintenance: async (id: string, minutes: number | null): Promise<Device> => {
+    const { data } = await apiClient.post<Device>(`/devices/${id}/maintenance`, { minutes })
+    return data
+  },
 }

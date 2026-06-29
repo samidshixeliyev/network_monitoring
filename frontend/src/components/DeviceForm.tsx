@@ -6,6 +6,8 @@ interface Props {
   device?: Device
   /** Pre-fill coordinates (e.g. from clicking the map when adding a device). */
   initialCoords?: { lat: number; lng: number }
+  /** All devices — used to populate the parent (dependency) dropdown. */
+  allDevices?: Device[]
   onSave: (data: DeviceCreate | DeviceUpdate) => Promise<void>
   onClose: () => void
 }
@@ -30,7 +32,7 @@ const label: React.CSSProperties = {
 const coordStr = (n: number | null | undefined, fallback?: number) =>
   n != null ? String(n) : fallback != null ? String(fallback) : ''
 
-export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
+export function DeviceForm({ device, initialCoords, allDevices = [], onSave, onClose }: Props) {
   const [form, setForm] = useState({
     vendor_name:   device?.vendor_name   ?? '',
     ip_address:    device?.ip_address    ?? '',
@@ -46,6 +48,10 @@ export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
     ssh_username:  device?.ssh_username  ?? '',
     ssh_password:  '',
     ssh_port:      String(device?.ssh_port ?? 22),
+    parent_id:        device?.parent_id ?? '',
+    check_tcp_port:   device?.check_tcp_port != null ? String(device.check_tcp_port) : '',
+    check_http_url:   device?.check_http_url ?? '',
+    check_http_expect: device?.check_http_expect != null ? String(device.check_http_expect) : '',
   })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -74,6 +80,10 @@ export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
         // Only send the password when the user typed one (keeps the stored
         // password on edit if left blank).
         ...(form.ssh_password ? { ssh_password: form.ssh_password } : {}),
+        parent_id:        form.parent_id || null,
+        check_tcp_port:   form.check_tcp_port === '' ? null : Number(form.check_tcp_port),
+        check_http_url:   form.check_http_url || null,
+        check_http_expect: form.check_http_expect === '' ? null : Number(form.check_http_expect),
       })
       onClose()
     } catch (err: unknown) {
@@ -205,6 +215,42 @@ export function DeviceForm({ device, initialCoords, onSave, onClose }: Props) {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* ── Dependency + multi-condition checks ─────────────────────── */}
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
+                Asılılıq və əlavə yoxlamalar
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <label style={label}>Parent cihaz (down olanda alarm susdurulur)</label>
+                <select style={{ ...field, cursor: 'pointer' }} value={form.parent_id}
+                  onChange={(e) => set('parent_id', e.target.value)}>
+                  <option value="">— yoxdur —</option>
+                  {allDevices.filter(d => d.id !== device?.id).map(d => (
+                    <option key={d.id} value={d.id}>{d.vendor_name} ({d.ip_address})</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={label}>TCP port</label>
+                  <input style={{ ...field, fontFamily: 'monospace' }} type="number" min={1} max={65535}
+                    placeholder="443" value={form.check_tcp_port}
+                    onChange={(e) => set('check_tcp_port', e.target.value)} />
+                </div>
+                <div>
+                  <label style={label}>HTTP URL</label>
+                  <input style={field} placeholder="http://host/health" value={form.check_http_url}
+                    onChange={(e) => set('check_http_url', e.target.value)} />
+                </div>
+                <div>
+                  <label style={label}>Gözlənilən</label>
+                  <input style={{ ...field, fontFamily: 'monospace' }} type="number" min={100} max={599}
+                    placeholder="200" value={form.check_http_expect}
+                    onChange={(e) => set('check_http_expect', e.target.value)} />
+                </div>
+              </div>
             </div>
           </div>
 

@@ -102,6 +102,33 @@ class Device(Base):
     ssh_facts: Mapped[str | None] = mapped_column(UnicodeText)
     ssh_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ── Topology / dependency ───────────────────────────────────────────────
+    # When the parent is down, this device's alarm is suppressed and shown as
+    # "unreachable (parent X down)" — avoids alarm storms during an upstream outage.
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL")
+    )
+    # ── Maintenance / acknowledge / mute ────────────────────────────────────
+    # Under maintenance until this time → no alarms (planned work).
+    maintenance_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Muted → keep monitoring but suppress alert notifications/sound.
+    is_muted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    # Set when a user acknowledges the current alarm (cleared on recovery).
+    alarm_acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Alert engine bookkeeping: when the last down-notification was sent (cleared
+    # on recovery) so we don't re-notify every cycle.
+    alert_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ── Multi-condition checks (beyond ICMP) ────────────────────────────────
+    # Optional TCP port and/or HTTP URL probe to catch "pings but service dead".
+    check_tcp_port: Mapped[int | None] = mapped_column(Integer)
+    check_http_url: Mapped[str | None] = mapped_column(Unicode(500))
+    check_http_expect: Mapped[int | None] = mapped_column(Integer)
+    # Last service-check result: True ok, False failing, None = no check configured.
+    service_ok: Mapped[bool | None] = mapped_column(Boolean)
+    service_detail: Mapped[str | None] = mapped_column(Unicode(255))
+
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -17,10 +17,11 @@ logger = logging.getLogger(__name__)
 
 async def warm_cache_if_cold() -> None:
     try:
-        existing = await state_cache.get_all_devices()
-        if existing:
-            logger.info("device snapshot cache already warm (%d device(s))", len(existing))
-            return
+        if await state_cache.cache_is_current():
+            existing = await state_cache.get_all_devices()
+            if existing:
+                logger.info("device snapshot cache already warm (%d device(s))", len(existing))
+                return
         async with AsyncSessionLocal() as session:
             devices = list(await session.scalars(select(Device).order_by(Device.created_at)))
         await state_cache.warm_devices([serialize_device(d) for d in devices])

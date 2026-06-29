@@ -39,6 +39,12 @@ class DeviceBase(BaseModel):
     ssh_enabled: bool = False
     ssh_port: Annotated[int, Field(ge=1, le=65535)] = 22
     ssh_username: str | None = None
+    # Topology: parent device (alarms suppressed when the parent is down).
+    parent_id: uuid.UUID | None = None
+    # Multi-condition checks (beyond ICMP): optional TCP port / HTTP URL.
+    check_tcp_port: Annotated[int, Field(ge=1, le=65535)] | None = None
+    check_http_url: str | None = None
+    check_http_expect: Annotated[int, Field(ge=100, le=599)] | None = None
 
     @field_validator("ip_address", mode="before")
     @classmethod
@@ -65,6 +71,10 @@ class DeviceUpdate(BaseModel):
     ssh_port: Annotated[int, Field(ge=1, le=65535)] | None = None
     ssh_username: str | None = None
     ssh_password: str | None = None
+    parent_id: uuid.UUID | None = None
+    check_tcp_port: Annotated[int, Field(ge=1, le=65535)] | None = None
+    check_http_url: str | None = None
+    check_http_expect: Annotated[int, Field(ge=100, le=599)] | None = None
 
     @field_validator("ip_address", mode="before")
     @classmethod
@@ -85,6 +95,12 @@ class DeviceRead(DeviceBase):
     id: uuid.UUID
     current_status: DeviceStatus
     last_checked_at: datetime | None
+    # Maintenance / ack / mute + multi-condition state (read-only)
+    maintenance_until: datetime | None
+    is_muted: bool
+    alarm_acked_at: datetime | None
+    service_ok: bool | None
+    service_detail: str | None
     # SSH telemetry (read-only; password is never returned)
     ssh_status: str
     ssh_hostname: str | None

@@ -15,6 +15,7 @@ from app.models.device import DeviceStatus
 from app.models.event_log import EventType
 from app.schemas.device import serialize_device
 from app.services import state_cache
+from app.services.checks import http_check, tcp_check
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,29 @@ async def _check_one(device_id: uuid.UUID) -> None:
             else:
                 new_status = DeviceStatus.unknown      # 1st miss → yellow
 
+        # Multi-condition: TCP/HTTP service check (catches "pings but service dead").
+        prev_service_ok = device.service_ok
+        if device.check_tcp_port or device.check_http_url:
+            ok = True
+            details: list[str] = []
+            if device.check_tcp_port:
+                o, d = await tcp_check(ip, device.check_tcp_port)
+                ok = ok and o
+                details.append(d)
+            if device.check_http_url:
+                o, d = await http_check(device.check_http_url, device.check_http_expect or 200)
+                ok = ok and o
+                details.append(d)
+            device.service_ok = ok
+            device.service_detail = "; ".join(details)[:255]
+        else:
+            device.service_ok = None
+            device.service_detail = None
+
+        # Clear a stale acknowledgement once the device is back online.
+        if new_status == DeviceStatus.online and device.alarm_acked_at is not None:
+            device.alarm_acked_at = None
+
         # Adaptive cadence: keep probing fast while the device is unsettled
         # (not online) or just changed state, so outages/recoveries are caught
         # quickly; let it relax to the slow cadence once it's stably online.
@@ -146,6 +170,11 @@ async def _check_one(device_id: uuid.UUID) -> None:
             return
 
         await session.commit()
+        # No status change, but if the service-check result flipped, refresh the
+        # cached snapshot so the dashboard reflects "service degraded" on refetch.
+        if device.service_ok != prev_service_ok:
+            await session.refresh(device)
+            await state_cache.upsert_device(serialize_device(device))
 
 
 # ── Staggered + adaptive scheduler ──────────────────────────────────────────

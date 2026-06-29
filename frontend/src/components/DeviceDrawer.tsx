@@ -34,6 +34,8 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
   const canSsh = hasPermission('ssh')
   const canEditDevice = hasPermission('edit_device') || isManager
   const canEditConfig = hasPermission('edit_config') || isManager
+  const canAck = hasPermission('ack') || isManager
+  const canMute = hasPermission('mute') || isManager
   const [editing, setEditing] = useState(false)
   const [showShell, setShowShell] = useState(false)
 
@@ -66,6 +68,20 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
   })
 
+  const ackM = useMutation({
+    mutationFn: (id: string) => devicesApi.ack(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
+  })
+  const muteM = useMutation({
+    mutationFn: ({ id, muted }: { id: string; muted: boolean }) => devicesApi.mute(id, muted),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
+  })
+  const maintM = useMutation({
+    mutationFn: ({ id, minutes }: { id: string; minutes: number | null }) =>
+      devicesApi.maintenance(id, minutes),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }) },
+  })
+
   if (!device) return null
 
   const coords = device.latitude != null && device.longitude != null
@@ -76,11 +92,16 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
   try { sshFacts = device.ssh_facts ? JSON.parse(device.ssh_facts) as SshFacts : null } catch { /* ignore */ }
   const sshSt = SSH_STATUS[device.ssh_status] ?? SSH_STATUS.unknown
 
+  const allDev = qc.getQueryData<Device[]>(['devices']) ?? []
+  const parent = device.parent_id ? allDev.find(d => d.id === device.parent_id) ?? null : null
+  const parentDown = parent?.current_status === 'offline'
+
   const meta: [string, string | null | undefined][] = [
     ['Priority', device.is_critical ? '⚠ Kritik' : null],
     ['Type', DEVICE_TYPE_LABELS[device.device_type]],
     ['Model', device.model_name],
     ['Location', device.location_text],
+    ['Parent', parent ? `${parent.vendor_name}${parentDown ? ' (DOWN)' : ''}` : null],
     ['Coordinates', coords],
     ['Description', device.description],
     ['Ping', device.is_enabled ? 'Enabled' : 'Disabled'],
@@ -91,6 +112,7 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
       {editing && (
         <DeviceForm
           device={device}
+          allDevices={qc.getQueryData<Device[]>(['devices']) ?? []}
           onSave={async (data) => { await updateM.mutateAsync({ id: device.id, data: data as DeviceUpdate }) }}
           onClose={() => setEditing(false)}
         />
@@ -131,7 +153,7 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
           {/* Status row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <StatusBadge status={device.current_status} />
             <span style={{ fontSize: 11, color: '#94a3b8' }}>
               {device.last_checked_at
@@ -139,6 +161,63 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
                 : 'Never checked'}
             </span>
           </div>
+
+          {/* Condition badges */}
+          {(() => {
+            const underMaint = device.maintenance_until != null && new Date(device.maintenance_until) > new Date()
+            const inAlarm = device.current_status === 'offline' || device.service_ok === false
+            const badges: { label: string; bg: string; fg: string }[] = []
+            if (underMaint) badges.push({ label: '🔧 Maintenance', bg: '#dbeafe', fg: '#1e40af' })
+            if (device.is_muted) badges.push({ label: '🔕 Muted', bg: '#f1f5f9', fg: '#475569' })
+            if (device.alarm_acked_at) badges.push({ label: '✓ Acked', bg: '#fef3c7', fg: '#92400e' })
+            if (device.service_ok === false) badges.push({ label: '⚠ Servis problemli', bg: '#fee2e2', fg: '#b91c1c' })
+            else if (device.service_ok === true) badges.push({ label: '✓ Servis OK', bg: '#dcfce7', fg: '#166534' })
+            if (device.current_status === 'offline' && parentDown) badges.push({ label: `↑ Parent down (${parent?.vendor_name})`, bg: '#e0e7ff', fg: '#3730a3' })
+            return badges.length ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {badges.map(b => (
+                  <span key={b.label} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: b.bg, color: b.fg }}>
+                    {b.label}
+                  </span>
+                ))}
+                {device.service_detail && (
+                  <span style={{ fontSize: 10, color: '#94a3b8', width: '100%' }}>{device.service_detail}</span>
+                )}
+                {inAlarm && null}
+              </div>
+            ) : null
+          })()}
+
+          {/* Operational controls: ack / mute / maintenance */}
+          {(canAck || canMute) && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {canAck && (device.current_status === 'offline' || device.service_ok === false) && !device.alarm_acked_at && (
+                <button onClick={() => ackM.mutate(device.id)} disabled={ackM.isPending}
+                  style={{ flex: 1, minWidth: 90, padding: '6px', borderRadius: 6, border: '1px solid #fcd34d', background: '#fffbeb', color: '#92400e', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}>
+                  ✓ Ack
+                </button>
+              )}
+              {canMute && (
+                <button onClick={() => muteM.mutate({ id: device.id, muted: !device.is_muted })} disabled={muteM.isPending}
+                  style={{ flex: 1, minWidth: 90, padding: '6px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}>
+                  {device.is_muted ? '🔔 Unmute' : '🔕 Mute'}
+                </button>
+              )}
+              {canMute && (
+                device.maintenance_until && new Date(device.maintenance_until) > new Date() ? (
+                  <button onClick={() => maintM.mutate({ id: device.id, minutes: 0 })} disabled={maintM.isPending}
+                    style={{ flex: 1, minWidth: 90, padding: '6px', borderRadius: 6, border: '1px solid #93c5fd', background: '#eff6ff', color: '#1e40af', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}>
+                    🔧 Bitir
+                  </button>
+                ) : (
+                  <button onClick={() => maintM.mutate({ id: device.id, minutes: 60 })} disabled={maintM.isPending}
+                    style={{ flex: 1, minWidth: 90, padding: '6px', borderRadius: 6, border: '1px solid #93c5fd', background: '#fff', color: '#1e40af', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}>
+                    🔧 Maint 60d
+                  </button>
+                )
+              )}
+            </div>
+          )}
 
           {/* Metadata card */}
           <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 13px', marginBottom: 14, border: '1px solid #f1f5f9' }}>

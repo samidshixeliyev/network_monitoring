@@ -22,6 +22,16 @@ export interface Device {
   is_enabled: boolean
   current_status: DeviceStatus
   last_checked_at: string | null
+  // Topology / maintenance / ack-mute / multi-condition (Priority 7)
+  parent_id: string | null
+  maintenance_until: string | null
+  is_muted: boolean
+  alarm_acked_at: string | null
+  check_tcp_port: number | null
+  check_http_url: string | null
+  check_http_expect: number | null
+  service_ok: boolean | null
+  service_detail: string | null
   // SSH telemetry (read-only; password never returned)
   ssh_enabled: boolean
   ssh_port: number
@@ -64,9 +74,39 @@ export interface DeviceCreate {
   ssh_port?: number
   ssh_username?: string | null
   ssh_password?: string | null
+  parent_id?: string | null
+  check_tcp_port?: number | null
+  check_http_url?: string | null
+  check_http_expect?: number | null
 }
 
 export type DeviceUpdate = Partial<DeviceCreate>
+
+export interface DeviceSla {
+  device_id: string
+  vendor_name: string
+  ip_address: string
+  region: string | null
+  is_critical: boolean
+  uptime_pct: number
+  samples: number
+}
+export interface RegionSla {
+  region: string
+  uptime_pct: number
+  devices: number
+  samples: number
+}
+export interface SlaReport {
+  range: string
+  devices: DeviceSla[]
+  regions: RegionSla[]
+}
+export interface MonitorStatus {
+  heartbeat: string | null
+  age_seconds: number | null
+  healthy: boolean
+}
 
 export interface EventLog {
   id: string

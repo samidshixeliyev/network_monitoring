@@ -349,7 +349,11 @@ On any device status change the server pushes:
 - ✅ Separate collector process (single source) + adaptive probe scheduling
 - ✅ Self-monitoring heartbeat (`GET /api/monitor/heartbeat`)
 - ✅ Ping latency + uptime history (TimescaleDB hypertable) + trend chart per device
+- ✅ Alert rules + escalation by email (down > threshold, critical-only, dedup + recovery)
+- ✅ Dependency/topology (parent down → child alarms suppressed)
+- ✅ Maintenance windows + acknowledge / mute
+- ✅ SLA / uptime reporting per device & region (day/week/month) + CSV export
+- ✅ Multi-condition checks (TCP port / HTTP endpoint) — "pings but service dead"
+- ✅ Dashboard search / status+region filter / critical-only
 
-## Roadmap (in progress)
-- Alert rules + escalation (Telegram/email), dependencies, maintenance windows, SLA reports
-- Multi-condition checks (TCP/HTTP), dashboard search/filter/group-by-region
+All Priority 1–7 scalability + feature work is complete.

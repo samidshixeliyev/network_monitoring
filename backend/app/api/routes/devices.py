@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_permission
 from app.core.config import settings
-from app.core.permissions import EDIT_CONFIG, EDIT_DEVICE, SSH
+from app.core.permissions import ACK, EDIT_CONFIG, EDIT_DEVICE, MUTE, SSH
 from app.db.session import get_db
 from app.models import Device, EventLog, User
 from app.models.device import DeviceStatus
@@ -41,9 +41,10 @@ async def list_devices(
     once and warms the cache. If Redis is unavailable, it falls back to the DB
     so the dashboard degrades gracefully instead of 500-ing."""
     try:
-        cached = await state_cache.get_all_devices()
-        if cached:
-            return cached
+        if await state_cache.cache_is_current():
+            cached = await state_cache.get_all_devices()
+            if cached:
+                return cached
     except Exception as exc:  # noqa: BLE001 — Redis hiccup → fall back to DB
         logger.warning("device snapshot cache read failed, using DB: %s", exc)
 
@@ -203,6 +204,83 @@ async def ssh_check_device(
         raise HTTPException(status_code=400, detail="SSH is not configured for this device")
     # collect_device persists the new ssh_* fields AND refreshes the Redis snapshot.
     return SshCheckResult(**result)
+
+
+class MuteRequest(BaseModel):
+    muted: bool
+
+
+class MaintenanceRequest(BaseModel):
+    # Minutes from now; null/0 clears maintenance.
+    minutes: int | None = None
+
+
+async def _get_or_404(db: AsyncSession, device_id: uuid.UUID) -> Device:
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
+
+@router.post("/{device_id}/ack", response_model=DeviceRead)
+async def ack_device(
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(ACK)),
+) -> Device:
+    """Acknowledge the device's current alarm (cleared automatically on recovery)."""
+    device = await _get_or_404(db, device_id)
+    device.alarm_acked_at = datetime.now(timezone.utc)
+    add_audit(db, current_user, "device.ack", target_type="device", target_id=str(device_id))
+    await db.commit()
+    await db.refresh(device)
+    await state_cache.upsert_device(serialize_device(device))
+    return device
+
+
+@router.post("/{device_id}/mute", response_model=DeviceRead)
+async def mute_device(
+    device_id: uuid.UUID,
+    body: MuteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(MUTE)),
+) -> Device:
+    """Mute/unmute alert notifications for a device (still monitored)."""
+    device = await _get_or_404(db, device_id)
+    device.is_muted = body.muted
+    add_audit(
+        db, current_user, "device.mute", target_type="device", target_id=str(device_id),
+        detail="muted" if body.muted else "unmuted",
+    )
+    await db.commit()
+    await db.refresh(device)
+    await state_cache.upsert_device(serialize_device(device))
+    return device
+
+
+@router.post("/{device_id}/maintenance", response_model=DeviceRead)
+async def maintenance_device(
+    device_id: uuid.UUID,
+    body: MaintenanceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(MUTE)),
+) -> Device:
+    """Put a device under maintenance for N minutes (no alarms), or clear it."""
+    device = await _get_or_404(db, device_id)
+    if body.minutes and body.minutes > 0:
+        device.maintenance_until = datetime.now(timezone.utc) + timedelta(minutes=body.minutes)
+        detail = f"{body.minutes}m"
+    else:
+        device.maintenance_until = None
+        detail = "cleared"
+    add_audit(
+        db, current_user, "device.maintenance", target_type="device",
+        target_id=str(device_id), detail=detail,
+    )
+    await db.commit()
+    await db.refresh(device)
+    await state_cache.upsert_device(serialize_device(device))
+    return device
 
 
 class HistoryPoint(BaseModel):

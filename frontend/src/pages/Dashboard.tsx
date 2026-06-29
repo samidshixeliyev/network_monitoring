@@ -7,6 +7,8 @@ import { DeviceDrawer } from '../components/DeviceDrawer'
 import { DeviceForm } from '../components/DeviceForm'
 import { NetworkGraph } from '../components/NetworkGraph'
 import { StatusBadge } from '../components/StatusBadge'
+import { SlaView } from '../components/SlaView'
+import { HeartbeatBadge } from '../components/HeartbeatBadge'
 import { Toaster, type Toast } from '../components/Toaster'
 import { useAuth } from '../hooks/useAuth'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -15,7 +17,7 @@ import type { Device, DeviceCreate, WsStatusMessage, WsBatchMessage } from '../t
 
 const WS_PROTO = window.location.protocol === 'https:' ? 'wss' : 'ws'
 
-type View = 'map' | 'graph' | 'table'
+type View = 'map' | 'graph' | 'table' | 'sla'
 type Coords = { lat: number; lng: number }
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
@@ -41,6 +43,8 @@ export function Dashboard() {
   const [view, setView] = useState<View>('map')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [regionFilter, setRegionFilter] = useState<string>('all')
+  const [criticalOnly, setCriticalOnly] = useState(false)
   const [selected, setSelected] = useState<Device | null>(null)
   const [adding, setAdding] = useState(false)
   const [placing, setPlacing] = useState(false)        // map placement mode
@@ -55,7 +59,10 @@ export function Dashboard() {
     setNewCoords({ lat, lng }); setPlacing(false); setAdding(true)
   }
 
-  const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list })
+  // Served from Redis, so polling is cheap; keeps service/maintenance state fresh.
+  const { data: devices = [] } = useQuery({
+    queryKey: ['devices'], queryFn: devicesApi.list, refetchInterval: 30_000,
+  })
 
   const createM = useMutation({
     mutationFn: devicesApi.create,
@@ -135,7 +142,10 @@ export function Dashboard() {
   const unknown = devices.filter(d => d.current_status === 'unknown').length
   const uptimePct = total > 0 ? Math.round((online / total) * 100) : 0
 
-  // Filtered list for table view
+  // Distinct regions for the group-by / filter dropdown.
+  const regions = Array.from(new Set(devices.map(d => d.location_text).filter(Boolean) as string[])).sort()
+
+  // Filtered list (search + status + region + critical-only)
   const filtered = devices.filter(d => {
     const matchSearch = !search ||
       d.vendor_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -143,7 +153,9 @@ export function Dashboard() {
       (d.model_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (d.location_text ?? '').toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'all' || d.current_status === statusFilter
-    return matchSearch && matchStatus
+    const matchRegion = regionFilter === 'all' || (d.location_text ?? '—') === regionFilter
+    const matchCritical = !criticalOnly || d.is_critical
+    return matchSearch && matchStatus && matchRegion && matchCritical
   })
 
   const drawerOpen = selected !== null
@@ -173,6 +185,7 @@ export function Dashboard() {
           ))}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <HeartbeatBadge />
           <span style={{ fontSize: 12, color: '#475569' }}>{user?.email}</span>
           <span style={{ fontSize: 11, background: '#1e3a5f', color: '#93c5fd', borderRadius: 4, padding: '2px 7px', fontWeight: 600 }}>
             {user?.role}
@@ -217,7 +230,7 @@ export function Dashboard() {
       <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         {/* View toggle */}
         <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 7, padding: 3, gap: 2 }}>
-          {(['map', 'graph', 'table'] as View[]).map(v => (
+          {(['map', 'graph', 'table', 'sla'] as View[]).map(v => (
             <button key={v} onClick={() => setView(v)}
               style={{
                 background: view === v ? '#fff' : 'transparent',
@@ -254,6 +267,19 @@ export function Dashboard() {
           <option value="offline">Offline</option>
           <option value="unknown">Unknown</option>
         </select>
+
+        {/* Region filter */}
+        <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)}
+          style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', background: '#fafafa', cursor: 'pointer' }}>
+          <option value="all">Bütün regionlar</option>
+          {regions.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+
+        {/* Critical-only toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#b91c1c', fontWeight: 600, cursor: 'pointer' }}>
+          <input type="checkbox" checked={criticalOnly} onChange={e => setCriticalOnly(e.target.checked)} />
+          ⚠ Yalnız kritik
+        </label>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           {canEdit && placing && (
@@ -368,6 +394,9 @@ export function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* SLA / uptime view */}
+          {view === 'sla' && <SlaView />}
         </div>
 
         {/* Device drawer */}
@@ -382,6 +411,7 @@ export function Dashboard() {
       {adding && (
         <DeviceForm
           initialCoords={newCoords ?? undefined}
+          allDevices={devices}
           onSave={async (data) => { await createM.mutateAsync(data as DeviceCreate) }}
           onClose={closeForm}
         />

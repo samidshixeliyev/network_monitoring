@@ -145,22 +145,14 @@ services:
       SECRET_KEY: lab-secret-change-me-0123456789abcdef
       ENVIRONMENT: production
       SIMULATION_MODE: "false"
-      # Inside the container icmplib works (NET_RAW cap granted in the image).
-      PING_METHOD: icmplib
-      PING_INTERVAL_SECONDS: "15"
-      PING_COUNT: "3"
-      FLAP_THRESHOLD: "2"
-      # SSH telemetry collector (logs into the device containers over SSH).
-      SSH_ENABLED: "true"
-      SSH_POLL_INTERVAL_SECONDS: "30"
+      # Probing runs in the dedicated `collector` service below, not here.
+      EMBEDDED_COLLECTOR: "false"
       DEFAULT_MANAGER_EMAIL: admin@example.com
       DEFAULT_MANAGER_PASSWORD: changeme
     networks: [netlab]
     restart: unless-stopped
     ports:
       - "8000:8000"
-    cap_add:
-      - NET_RAW
     volumes:
       - ../backend:/app
     command: >
@@ -169,6 +161,47 @@ services:
              python seed.py &&
              python seed_lab_devices.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # ── Collector: the SINGLE probing process (ICMP + SSH → Redis) ─────────────
+  # Decoupled from the API so probing never competes with serving users. Needs
+  # NET_RAW for icmplib. Waits for the API to run migrations/seed first.
+  collector:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: network
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "Lab_Str0ng_Pass!"
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: production
+      SIMULATION_MODE: "false"
+      # Inside the container icmplib works (NET_RAW cap granted in the image).
+      PING_METHOD: icmplib
+      PING_INTERVAL_SECONDS: "30"
+      PING_FAST_INTERVAL_SECONDS: "5"
+      PING_COUNT: "3"
+      FLAP_THRESHOLD: "2"
+      # SSH telemetry collector (logs into the device containers over SSH).
+      SSH_ENABLED: "true"
+      SSH_POLL_INTERVAL_SECONDS: "30"
+    networks: [netlab]
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ../backend:/app
+    command: >
+      sh -c "sleep 8 && python -m app.collector"
 
 volumes:
   pgdata:

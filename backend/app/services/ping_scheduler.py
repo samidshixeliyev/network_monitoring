@@ -24,8 +24,20 @@ _IS_WINDOWS = platform.system() == "Windows"
 # the same instant.
 _schedule: dict[uuid.UUID, float] = {}
 
+# Per-device monotonic deadline until which a device is "volatile" → probed at
+# the fast cadence (set on any status change; see _check_one).
+_volatile_until: dict[uuid.UUID, float] = {}
+
 # Bound how many devices are probed concurrently at any moment.
 _sem = asyncio.Semaphore(64)
+
+
+def _next_interval(did: uuid.UUID, now: float) -> int:
+    """Adaptive cadence: recently-changed / unsettled devices are probed fast,
+    healthy-and-stable ones slow."""
+    if now < _volatile_until.get(did, 0.0):
+        return settings.PING_FAST_INTERVAL_SECONDS
+    return settings.PING_INTERVAL_SECONDS
 
 
 # ── ICMP probing ────────────────────────────────────────────────────────────
@@ -91,6 +103,13 @@ async def _check_one(device_id: uuid.UUID) -> None:
             else:
                 new_status = DeviceStatus.unknown      # 1st miss → yellow
 
+        # Adaptive cadence: keep probing fast while the device is unsettled
+        # (not online) or just changed state, so outages/recoveries are caught
+        # quickly; let it relax to the slow cadence once it's stably online.
+        mono = time.monotonic()
+        if new_status != DeviceStatus.online or new_status != prev_status:
+            _volatile_until[device_id] = mono + settings.PING_VOLATILE_WINDOW_SECONDS
+
         if new_status != prev_status:
             device.current_status = new_status
             # Only the hard online/offline edges are notable events; the
@@ -113,10 +132,10 @@ async def _check_one(device_id: uuid.UUID) -> None:
         await session.commit()
 
 
-# ── Staggered scheduler ─────────────────────────────────────────────────────
-async def _refresh_schedule(now: float, interval: int) -> None:
-    """Add newly-enabled devices to the schedule (spread across the interval so
-    they don't all fire together) and drop removed/disabled ones."""
+# ── Staggered + adaptive scheduler ──────────────────────────────────────────
+async def _refresh_schedule(now: float) -> None:
+    """Add newly-enabled devices to the schedule (spread across the slow interval
+    so they don't all fire together) and drop removed/disabled ones."""
     async with AsyncSessionLocal() as session:
         ids = list(
             await session.scalars(select(Device.id).where(Device.is_enabled.is_(True)))
@@ -126,7 +145,9 @@ async def _refresh_schedule(now: float, interval: int) -> None:
     for did in list(_schedule):
         if did not in id_set:
             del _schedule[did]
+            _volatile_until.pop(did, None)
 
+    interval = settings.PING_INTERVAL_SECONDS
     for did in ids:
         if did not in _schedule:
             # Stable per-device offset in [0, interval): spreads first checks out.
@@ -134,7 +155,7 @@ async def _refresh_schedule(now: float, interval: int) -> None:
             _schedule[did] = now + offset
 
 
-async def _run_due(now: float, interval: int) -> None:
+async def _run_due(now: float) -> None:
     due = [did for did, t in _schedule.items() if t <= now]
     if not due:
         return
@@ -147,11 +168,11 @@ async def _run_due(now: float, interval: int) -> None:
                 logger.error("check failed for %s: %s", did, exc)
 
     await asyncio.gather(*(run(d) for d in due))
-    # Reschedule each checked device exactly one interval out — because they
-    # came due at staggered times, they stay staggered.
+    # Reschedule each checked device by ITS OWN adaptive interval (fast if it just
+    # changed / isn't online, slow if stably healthy). Staggering is preserved.
     after = time.monotonic()
     for did in due:
-        _schedule[did] = after + interval
+        _schedule[did] = after + _next_interval(did, after)
 
 
 async def ping_loop() -> None:
@@ -160,19 +181,21 @@ async def ping_loop() -> None:
         while True:
             await asyncio.sleep(3600)
 
-    interval = settings.PING_INTERVAL_SECONDS
     logger.info(
-        "ping loop started — staggered (method=%s, interval=%ds, count=%d, flap=%d)",
+        "ping loop started — adaptive (method=%s, healthy=%ds, fast=%ds, count=%d, flap=%d)",
         settings.PING_METHOD,
-        interval,
+        settings.PING_INTERVAL_SECONDS,
+        settings.PING_FAST_INTERVAL_SECONDS,
         settings.PING_COUNT,
         settings.FLAP_THRESHOLD,
     )
     while True:
         try:
             now = time.monotonic()
-            await _refresh_schedule(now, interval)
-            await _run_due(now, interval)
+            await _refresh_schedule(now)
+            await _run_due(now)
+            # Heartbeat so the UI can tell "all healthy" from "monitor stuck".
+            await state_cache.set_heartbeat(datetime.now(timezone.utc).isoformat())
         except Exception as exc:
             logger.error("scheduler tick error: %s", exc, exc_info=True)
         # Tick frequently so the per-device stagger has ~1s resolution.

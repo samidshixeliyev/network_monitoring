@@ -286,8 +286,11 @@ network_monitoring/
 | `SECRET_KEY` | — | JWT signing key — **change before deploy** |
 | `ALGORITHM` | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Token TTL |
-| `PING_INTERVAL_SECONDS` | `30` | Ping loop cadence |
-| `FLAP_THRESHOLD` | `3` | Consecutive failures to flip OFFLINE |
+| `PING_INTERVAL_SECONDS` | `30` | Slow cadence for stable/healthy devices |
+| `PING_FAST_INTERVAL_SECONDS` | `5` | Fast cadence for recently-flapping / non-online devices |
+| `PING_VOLATILE_WINDOW_SECONDS` | `120` | How long a device stays on the fast cadence after a change |
+| `FLAP_THRESHOLD` | `2` | Consecutive failures to flip OFFLINE |
+| `EMBEDDED_COLLECTOR` | `true` | Run probe loops in the API process. Set `false` when a separate `collector` service runs them |
 | `DEFAULT_MANAGER_EMAIL` | `admin@example.com` | Seed manager email |
 | `DEFAULT_MANAGER_PASSWORD` | `changeme` | Seed manager password |
 
@@ -343,8 +346,10 @@ On any device status change the server pushes:
 - ✅ Permission-based RBAC + audit trail (SSH gated by `ssh` permission)
 - ✅ Offline self-hosted OSM basemap (z0–z9), no internet at runtime
 - ✅ SSH telemetry + browser web terminal
+- ✅ Separate collector process (single source) + adaptive probe scheduling
+- ✅ Self-monitoring heartbeat (`GET /api/monitor/heartbeat`)
 
 ## Roadmap (in progress)
-- Separate collector process + adaptive probe scheduling
 - Ping/latency history (TimescaleDB) + trend charts
 - Alert rules + escalation (Telegram/email), dependencies, maintenance windows, SLA reports
+- Multi-condition checks (TCP/HTTP), dashboard search/filter/group-by-region

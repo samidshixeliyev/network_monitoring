@@ -32,7 +32,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Healthy devices are probed at this (slow) cadence.
     PING_INTERVAL_SECONDS: int = 30
+    # Recently-flapping / non-online devices are probed faster, so an outage is
+    # detected and a recovery is confirmed quickly. A device is "volatile" (fast)
+    # while it is not online or for this window after its last status change.
+    PING_FAST_INTERVAL_SECONDS: int = 5
+    PING_VOLATILE_WINDOW_SECONDS: int = 120
     # ICMP packets sent per check. Long network paths can drop some packets, so
     # the device counts as alive if AT LEAST ONE of these replies.
     PING_COUNT: int = 3
@@ -40,6 +46,11 @@ class Settings(BaseSettings):
     # failed check moves it to UNKNOWN (yellow); reaching this count → OFFLINE.
     FLAP_THRESHOLD: int = 2
     PING_TIMEOUT_SECONDS: int = 1
+
+    # The probing loops (ICMP + SSH) run in a SEPARATE collector process by
+    # default (single source of truth — see app/collector). When True, the API
+    # process also runs them — convenient for all-in-one local dev.
+    EMBEDDED_COLLECTOR: bool = True
 
     # How devices are probed:
     #   "system"  → the OS `ping` command (works on Windows WITHOUT admin) — default

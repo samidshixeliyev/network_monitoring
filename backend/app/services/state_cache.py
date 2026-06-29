@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 DEVICES_KEY = "devices:full"
 CHANGES_CHANNEL = "status:changes"
+HEARTBEAT_KEY = "collector:heartbeat"
 
 _redis: redis.Redis | None = None
 
@@ -122,3 +123,14 @@ async def update_and_publish(
     the collector / simulate path so cache and subscribers stay consistent."""
     await upsert_device(serialized)
     await publish_status_change(serialized["id"], status, last_checked_at)
+
+
+# ── Collector heartbeat (self-monitoring) ────────────────────────────────────
+async def set_heartbeat(iso_timestamp: str) -> None:
+    """The collector stamps this every probe cycle so the UI can tell 'all
+    healthy' from 'the monitor itself is stuck'."""
+    await get_redis().set(HEARTBEAT_KEY, iso_timestamp)
+
+
+async def get_heartbeat() -> str | None:
+    return await get_redis().get(HEARTBEAT_KEY)

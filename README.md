@@ -91,34 +91,32 @@ The map works **with no internet access** — no online tile providers are used.
 - **Live status:** dots recolor in real time via WebSocket
   (green = online, red = offline, grey = unknown).
 
-### Upgrading to detailed `.ecw` / `.tif` imagery (optional)
+### Offline OSM basemap (z0–z9)
 
-Browsers cannot render `.ecw` or `.tif` directly, so convert the georeferenced
-raster to an **XYZ tile pyramid once**, then serve it locally — still fully
-offline. `.ecw` is proprietary: do the conversion on a machine that has ECW
-support (QGIS with the ECW provider, or a GDAL build with the ECW driver). The
-running app never touches `.ecw` itself.
-
-```bash
-# 1. (ECW only) convert to GeoTIFF on an ECW-capable machine:
-gdal_translate input.ecw azerbaijan.tif
-
-# 2. reproject to Web Mercator (Leaflet's default CRS):
-gdalwarp -t_srs EPSG:3857 azerbaijan.tif az_3857.tif
-
-# 3. generate a static XYZ tile pyramid (zoom levels 6–13, say):
-gdal2tiles.py --xyz -z 6-13 az_3857.tif backend/tiles
-```
-
-Drop the result in `backend/tiles/{z}/{x}/{y}.png` — the API auto-serves it at
-`/tiles/...` (see `app/main.py`). Then point the frontend at it:
+The map uses **self-hosted OpenStreetMap raster tiles**, pre-downloaded for the
+Azerbaijan bounding box (zoom 0–9) and served locally — **fully offline**, no
+internet tile providers at runtime. Download once on an internet-connected
+machine, then ship `backend/tiles/` to the air-gapped server.
 
 ```bash
-# frontend/.env.local
-VITE_TILES_URL=/tiles/{z}/{x}/{y}.png
+cd backend
+python scripts/download_osm_tiles.py            # → backend/tiles/osm/{z}/{x}/{y}.png
+# options:
+#   MAX_ZOOM=9 python scripts/download_osm_tiles.py
+#   python scripts/download_osm_tiles.py --bbox 44.5,38.0,50.6,42.0
+#   TILE_SERVER=https://your-tileserver python scripts/download_osm_tiles.py
 ```
 
-The map then shows the raster imagery; the vector outline becomes a thin border.
+The API auto-serves `backend/tiles/` at `/tiles/...` (see `app/main.py`), and the
+frontend loads `/tiles/osm/{z}/{x}/{y}.png` by default (no env needed). The
+bundled GeoJSON outline overlays the imagery as a thin border.
+
+> OSM's tile usage policy forbids bulk downloading from the public server — the
+> one-time ~100-tile bbox prefetch is fine, but for larger areas/zooms point
+> `TILE_SERVER` at your own or a licensed tile server. Tiles are gitignored
+> (`backend/tiles/`) since they're generated binary assets.
+>
+> Override the URL/zoom with `VITE_TILES_URL` / `VITE_TILES_MAX_ZOOM` if needed.
 
 ---
 
@@ -267,8 +265,8 @@ network_monitoring/
         └── types/               # TypeScript interfaces mirroring backend schemas
 ```
 
-> Raster tiles (when generated from `.ecw/.tif`) live in `backend/tiles/` and are
-> served at `/tiles/...`. The directory is gitignored / optional.
+> Offline OSM tiles live in `backend/tiles/osm/{z}/{x}/{y}.png` and are served at
+> `/tiles/...` (see the prefetch script above). The directory is gitignored.
 
 ---
 
@@ -297,7 +295,8 @@ network_monitoring/
 
 | Variable | Default | Description |
 |---|---|---|
-| `VITE_TILES_URL` | — | XYZ template for self-hosted raster tiles, e.g. `/tiles/{z}/{x}/{y}.png`. Unset → vector outline only |
+| `VITE_TILES_URL` | `/tiles/osm/{z}/{x}/{y}.png` | XYZ template for the offline basemap tiles |
+| `VITE_TILES_MAX_ZOOM` | `9` | Highest zoom level the prefetched tiles cover |
 
 ---
 
@@ -340,9 +339,12 @@ On any device status change the server pushes:
 - ✅ Offline Azerbaijan map with live, geo-placed device status
 - ✅ PostgreSQL + TimescaleDB backend (asyncpg)
 - ✅ Redis current-state cache + pub/sub (dashboard snapshot served from Redis)
+- ✅ Coalesced WebSocket batches + Leaflet marker clustering (smooth at scale)
+- ✅ Permission-based RBAC + audit trail (SSH gated by `ssh` permission)
+- ✅ Offline self-hosted OSM basemap (z0–z9), no internet at runtime
+- ✅ SSH telemetry + browser web terminal
 
-## Phase 2 (deferred)
-- Self-hosted `.ecw/.tif` raster tiles wired in by default (pipeline documented above)
-- SSH / Telnet / Serial remote access
-- Ping history charts
-- Alert/notification rules
+## Roadmap (in progress)
+- Separate collector process + adaptive probe scheduling
+- Ping/latency history (TimescaleDB) + trend charts
+- Alert rules + escalation (Telegram/email), dependencies, maintenance windows, SLA reports

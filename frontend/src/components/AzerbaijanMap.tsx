@@ -16,9 +16,13 @@ import azGeo from '../assets/azerbaijan.json'
 import type { Device, DeviceStatus } from '../types'
 import { deviceGlyphSvg } from '../lib/deviceIcons'
 
-// Optional offline raster basemap. Set VITE_TILES_URL once .ecw/.tif imagery
-// has been converted to an XYZ pyramid and is served (e.g. /tiles/{z}/{x}/{y}.png).
-const TILES_URL = import.meta.env.VITE_TILES_URL as string | undefined
+// Offline OSM raster basemap (z0–z9), pre-downloaded into backend/tiles/osm and
+// served at /tiles/osm/... — fully offline, no internet tile providers. Override
+// the URL via VITE_TILES_URL if serving tiles from elsewhere.
+const TILES_URL =
+  (import.meta.env.VITE_TILES_URL as string | undefined) ?? '/tiles/osm/{z}/{x}/{y}.png'
+// Highest zoom we have tiles for (the prefetch script defaults to z9).
+const MAX_TILE_ZOOM = Number(import.meta.env.VITE_TILES_MAX_ZOOM ?? 9)
 
 const STATUS_COLOR: Record<DeviceStatus, string> = {
   online: '#16a34a',
@@ -144,8 +148,11 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
       >
         <FitAzerbaijan />
 
-        {/* Raster basemap if available; otherwise just the vector outline. */}
-        {TILES_URL && <TileLayer url={TILES_URL} maxZoom={18} />}
+        {/* Offline OSM raster basemap (z0–z9). maxNativeZoom caps tile requests
+            at what we actually downloaded; Leaflet upscales beyond if needed. */}
+        {TILES_URL && (
+          <TileLayer url={TILES_URL} maxNativeZoom={MAX_TILE_ZOOM} maxZoom={18} />
+        )}
 
         {/* Country / district outline (bundled, fully offline). */}
         <GeoJSON

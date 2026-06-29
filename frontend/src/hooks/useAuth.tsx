@@ -13,6 +13,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   isManager: boolean
+  hasPermission: (permission: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -31,7 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await apiLogin(email, password)
-    const authUser: AuthUser = { token: res.access_token, email: res.email, role: res.role }
+    const authUser: AuthUser = {
+      token: res.access_token,
+      email: res.email,
+      role: res.role,
+      permissions: res.permissions ?? [],
+    }
     localStorage.setItem('token', res.access_token)
     localStorage.setItem('user', JSON.stringify(authUser))
     setUser(authUser)
@@ -43,8 +49,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const hasPermission = useCallback(
+    (permission: string) => !!user?.permissions?.includes(permission),
+    [user],
+  )
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isManager: user?.role === 'manager' }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        // Authoritative gate is the backend; these only toggle UI affordances.
+        isManager: !!user?.permissions?.includes('manage_users') || user?.role === 'manager',
+        hasPermission,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

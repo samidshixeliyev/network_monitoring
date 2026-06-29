@@ -17,9 +17,9 @@ from app.models import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
-# Build the URL from app settings (assembled aioodbc/odbc_connect string).
-# We pass it straight to create_async_engine rather than through alembic.ini so
-# configparser does not try to interpolate the '%'-encoded odbc_connect value.
+# Build the URL from app settings (postgresql+asyncpg://…). We pass it straight
+# to create_async_engine rather than through alembic.ini so configparser does
+# not try to interpolate any '%'-encoded characters in the password.
 DB_URL = settings.sqlalchemy_url
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { memo, useEffect, useMemo } from 'react'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import {
@@ -10,6 +10,7 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet'
+import MarkerClusterGroup from 'react-leaflet-cluster'
 import type { GeoJsonObject } from 'geojson'
 import azGeo from '../assets/azerbaijan.json'
 import type { Device, DeviceStatus } from '../types'
@@ -50,6 +51,42 @@ function deviceDivIcon(device: Device, selected: boolean) {
     `${glyph}${badge}</div>`
   return L.divIcon({ html, className: 'nm-device-pin', iconSize: [size, size], iconAnchor: [size / 2, size / 2] })
 }
+
+// One device pin. Memoized so a WebSocket tick that changes 3 devices only
+// re-renders those 3 markers — not all 500. The icon is rebuilt only when a
+// field that affects its appearance changes (status/critical/enabled/type/sel).
+interface DeviceMarkerProps {
+  device: Device
+  selected: boolean
+  onSelect: (device: Device) => void
+}
+
+const DeviceMarker = memo(function DeviceMarker({ device, selected, onSelect }: DeviceMarkerProps) {
+  const icon = useMemo(
+    () => deviceDivIcon(device, selected),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [device.current_status, device.is_critical, device.is_enabled, device.device_type, selected],
+  )
+  const color = STATUS_COLOR[device.current_status]
+  return (
+    <Marker
+      position={[device.latitude as number, device.longitude as number]}
+      icon={icon}
+      zIndexOffset={selected ? 1000 : 0}
+      eventHandlers={{ click: () => onSelect(device) }}
+    >
+      <Tooltip direction="top" offset={[0, -18]}>
+        <div style={{ fontWeight: 700, fontSize: 12 }}>{device.vendor_name}</div>
+        <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#475569' }}>
+          {device.ip_address}
+        </div>
+        <div style={{ fontSize: 11, color, fontWeight: 600, textTransform: 'capitalize' }}>
+          {device.device_type} · {device.current_status}
+        </div>
+      </Tooltip>
+    </Marker>
+  )
+})
 
 // Fit the view to the country outline once, and lock panning to its bounds.
 function FitAzerbaijan() {
@@ -123,29 +160,18 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
 
         {placing && onMapClick && <ClickToPlace onClick={onMapClick} />}
 
-        {placed.map(device => {
-          const isSel = device.id === selectedId
-          const color = STATUS_COLOR[device.current_status]
-          return (
-            <Marker
+        {/* Cluster markers so the map stays smooth at 500+ devices: nearby pins
+            collapse into a count bubble until you zoom in. */}
+        <MarkerClusterGroup chunkedLoading maxClusterRadius={50} disableClusteringAtZoom={11}>
+          {placed.map(device => (
+            <DeviceMarker
               key={device.id}
-              position={[device.latitude as number, device.longitude as number]}
-              icon={deviceDivIcon(device, isSel)}
-              zIndexOffset={isSel ? 1000 : 0}
-              eventHandlers={{ click: () => onSelect(device) }}
-            >
-              <Tooltip direction="top" offset={[0, -18]}>
-                <div style={{ fontWeight: 700, fontSize: 12 }}>{device.vendor_name}</div>
-                <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#475569' }}>
-                  {device.ip_address}
-                </div>
-                <div style={{ fontSize: 11, color, fontWeight: 600, textTransform: 'capitalize' }}>
-                  {device.device_type} · {device.current_status}
-                </div>
-              </Tooltip>
-            </Marker>
-          )
-        })}
+              device={device}
+              selected={device.id === selectedId}
+              onSelect={onSelect}
+            />
+          ))}
+        </MarkerClusterGroup>
       </MapContainer>
 
       {placing && (

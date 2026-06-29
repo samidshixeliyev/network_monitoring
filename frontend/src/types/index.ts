@@ -1,7 +1,12 @@
 export type DeviceStatus = 'online' | 'offline' | 'unknown'
 export type DeviceType = 'router' | 'switch' | 'server' | 'firewall' | 'access_point' | 'other'
 export type EventType = 'came_online' | 'went_offline'
-export type UserRole = 'manager' | 'user'
+// Roles are server-defined named bundles of permissions; keep this open.
+export type UserRole = 'manager' | 'engineer' | 'operator' | 'viewer' | 'user' | string
+
+// Permission names returned by the backend (authoritative gate lives there).
+export type Permission =
+  | 'view' | 'ssh' | 'ack' | 'mute' | 'edit_device' | 'edit_config' | 'manage_users'
 
 export interface Device {
   id: string
@@ -80,16 +85,24 @@ export interface TokenResponse {
   token_type: string
   email: string
   role: UserRole
+  permissions: string[]
 }
 
 export interface AuthUser {
   token: string
   email: string
   role: UserRole
+  permissions: string[]
 }
 
 export interface WsStatusMessage {
   device_id: string
   status: DeviceStatus
   last_checked_at: string
+}
+
+// The gateway coalesces status changes into a single batch frame (~250ms window).
+export interface WsBatchMessage {
+  type: 'batch'
+  changes: WsStatusMessage[]
 }

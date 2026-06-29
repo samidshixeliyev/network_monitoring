@@ -1,11 +1,11 @@
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 sqlalchemy[asyncio]==2.0.36
-# ── MSSQL async driver ──────────────────────────────────────────────────────
-# aioodbc wraps pyodbc; requires an ODBC Driver for SQL Server (17 or 18)
-# installed on the host/container OS.
-aioodbc==0.5.0
-pyodbc==5.2.0
+# ── PostgreSQL + TimescaleDB async driver ───────────────────────────────────
+# asyncpg is the native async Postgres driver. The DB is a single
+# timescale/timescaledb image (Postgres + Timescale extension) holding both the
+# relational data (users/devices/audit) and the time-series ping history.
+asyncpg==0.30.0
 alembic==1.14.0
 pydantic[email]==2.10.3
 pydantic-settings==2.6.1
@@ -15,3 +15,5 @@ python-jose[cryptography]==3.3.0
 icmplib==3.0.4
 asyncssh==2.18.0
 python-multipart==0.0.19
+# ── Redis: current-state cache + pub/sub bus between collector and gateways ──
+redis==5.2.1

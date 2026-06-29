@@ -21,6 +21,8 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models import Device
+from app.schemas.device import serialize_device
+from app.services import state_cache
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +133,11 @@ async def collect_device(device_id: uuid.UUID) -> dict | None:
             device.ssh_uptime = result["uptime"]
             device.ssh_facts = json.dumps(result["facts"], ensure_ascii=False)
         await session.commit()
+        # refresh() reloads server-generated columns (updated_at) in-context so
+        # serialization doesn't trigger sync lazy IO after commit.
+        await session.refresh(device)
+        # Keep the Redis snapshot's ssh_* fields in sync for the dashboard.
+        await state_cache.upsert_device(serialize_device(device))
 
         return {"status": status, "detail": detail, **(result or {})}
 
@@ -150,8 +157,8 @@ async def ssh_poll_loop() -> None:
                 ids = list(
                     await session.scalars(
                         select(Device.id).where(
-                            Device.ssh_enabled == True,  # noqa: E712
-                            Device.is_enabled == True,  # noqa: E712
+                            Device.ssh_enabled.is_(True),
+                            Device.is_enabled.is_(True),
                         )
                     )
                 )

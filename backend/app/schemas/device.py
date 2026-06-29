@@ -96,6 +96,12 @@ class DeviceRead(DeviceBase):
     updated_at: datetime
 
 
+def serialize_device(device: object) -> dict:
+    """ORM Device → JSON-able dict (DeviceRead shape) for the Redis snapshot
+    cache. The write-only ssh_password is excluded by DeviceRead."""
+    return DeviceRead.model_validate(device).model_dump(mode="json")
+
+
 class SshCheckResult(BaseModel):
     """On-demand SSH collection result returned by POST /{id}/ssh-check."""
     status: str

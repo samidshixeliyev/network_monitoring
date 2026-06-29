@@ -11,7 +11,7 @@ import { Toaster, type Toast } from '../components/Toaster'
 import { useAuth } from '../hooks/useAuth'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { playAlert } from '../lib/sound'
-import type { Device, DeviceCreate, WsStatusMessage } from '../types'
+import type { Device, DeviceCreate, WsStatusMessage, WsBatchMessage } from '../types'
 
 const WS_PROTO = window.location.protocol === 'https:' ? 'wss' : 'ws'
 
@@ -32,7 +32,9 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 }
 
 export function Dashboard() {
-  const { user, logout, isManager } = useAuth()
+  const { user, logout, isManager, hasPermission } = useAuth()
+  // Device-editing affordances: managers + engineers. Backend still enforces.
+  const canEdit = hasPermission('edit_device') || isManager
   const navigate = useNavigate()
   const qc = useQueryClient()
 
@@ -83,20 +85,35 @@ export function Dashboard() {
 
   const wsUrl = user ? `${WS_PROTO}://${window.location.host}/ws/status?token=${user.token}` : null
 
+  const handleSelect = useCallback((d: Device) => {
+    setSelected(prev => (prev?.id === d.id ? null : d))
+  }, [])
+
   const handleWs = useCallback((raw: string) => {
-    const msg = JSON.parse(raw) as WsStatusMessage
-    // Detect the transition against the cached previous status → fire a toast.
+    const msg = JSON.parse(raw) as WsStatusMessage | WsBatchMessage
+    // The gateway coalesces changes into a 250ms batch frame; older single
+    // frames are still handled for safety.
+    const changes = 'type' in msg && msg.type === 'batch' ? msg.changes : [msg as WsStatusMessage]
+    if (changes.length === 0) return
+
+    // Detect transitions against the cached previous status → fire toasts.
     const prev = qc.getQueryData<Device[]>(['devices'])
-    const dev = prev?.find(d => d.id === msg.device_id)
-    if (dev && dev.current_status !== msg.status) {
-      if (msg.status === 'offline') addToast('down', dev)
-      else if (msg.status === 'online') addToast('up', dev)
+    for (const c of changes) {
+      const dev = prev?.find(d => d.id === c.device_id)
+      if (dev && dev.current_status !== c.status) {
+        if (c.status === 'offline') addToast('down', dev)
+        else if (c.status === 'online') addToast('up', dev)
+      }
     }
+
+    // Apply the whole batch in ONE cache update → a single re-render. Unchanged
+    // devices keep their object reference, so their memoized markers don't redraw.
+    const byId = new Map(changes.map(c => [c.device_id, c]))
     qc.setQueryData<Device[]>(['devices'], p =>
-      p?.map(d => d.id === msg.device_id
-        ? { ...d, current_status: msg.status, last_checked_at: msg.last_checked_at }
-        : d,
-      ),
+      p?.map(d => {
+        const c = byId.get(d.id)
+        return c ? { ...d, current_status: c.status, last_checked_at: c.last_checked_at } : d
+      }),
     )
   }, [qc, addToast])
 
@@ -239,7 +256,7 @@ export function Dashboard() {
         </select>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isManager && placing && (
+          {canEdit && placing && (
             <>
               <span style={{ fontSize: 12, color: '#1e40af', fontWeight: 600 }}>
                 Xəritəyə klikləyin…
@@ -254,7 +271,7 @@ export function Dashboard() {
               </button>
             </>
           )}
-          {isManager && !placing && (
+          {canEdit && !placing && (
             <button onClick={startAdd}
               style={{ background: '#1e40af', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}>
               + Add Device
@@ -273,7 +290,7 @@ export function Dashboard() {
               <AzerbaijanMap
                 devices={search || statusFilter !== 'all' ? filtered : devices}
                 selectedId={selected?.id ?? null}
-                onSelect={d => setSelected(prev => prev?.id === d.id ? null : d)}
+                onSelect={handleSelect}
                 placing={placing}
                 onMapClick={placeAt}
               />
@@ -284,12 +301,12 @@ export function Dashboard() {
           {view === 'graph' && (
             <div style={{ width: '100%', height: '100%' }}>
               {devices.length === 0 ? (
-                <EmptyState isManager={isManager} onAdd={() => setAdding(true)} />
+                <EmptyState isManager={canEdit} onAdd={() => setAdding(true)} />
               ) : (
                 <NetworkGraph
                   devices={search || statusFilter !== 'all' ? filtered : devices}
                   selectedId={selected?.id ?? null}
-                  onSelect={d => setSelected(prev => prev?.id === d.id ? null : d)}
+                  onSelect={handleSelect}
                 />
               )}
             </div>

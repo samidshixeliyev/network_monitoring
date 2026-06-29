@@ -6,9 +6,11 @@ import uuid
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import selectinload
 
+from app.core.permissions import SSH
 from app.core.security import decode_token
 from app.db.session import AsyncSessionLocal
-from app.models import Device, User
+from app.models import Device, Role, User
+from app.services.audit import record_audit_safe
 from app.services.ws_manager import ws_manager
 
 router = APIRouter(tags=["websocket"])
@@ -34,8 +36,9 @@ async def ws_status(websocket: WebSocket, token: str = Query(...)) -> None:
         await ws_manager.disconnect(websocket)
 
 
-async def _auth_manager(token: str) -> User | None:
-    """Decode the WS token and load the user; only managers may open a shell."""
+async def _auth_ssh(token: str) -> User | None:
+    """Decode the WS token and load the user; only users with the `ssh`
+    permission may open a device shell (regular viewers cannot)."""
     try:
         payload = decode_token(token)
     except ValueError:
@@ -45,9 +48,13 @@ async def _auth_manager(token: str) -> User | None:
         return None
     async with AsyncSessionLocal() as session:
         user = await session.get(
-            User, uuid.UUID(str(sub)), options=[selectinload(User.role)]
+            User,
+            uuid.UUID(str(sub)),
+            options=[selectinload(User.role).selectinload(Role.permissions)],
         )
-        if user is None or not user.is_active or user.role.name != "manager":
+        if user is None or not user.is_active or user.role is None:
+            return None
+        if SSH not in {p.name for p in user.role.permissions}:
             return None
     return user
 
@@ -64,8 +71,8 @@ async def ws_device_shell(
     device. Client→server messages are JSON {type:'data'|'resize', ...};
     server→client frames are raw terminal text written straight to xterm.
 
-    Manager-only for now (role-based / 2FA hardening comes later)."""
-    user = await _auth_manager(token)
+    Requires the `ssh` permission (2FA hardening comes later)."""
+    user = await _auth_ssh(token)
     if user is None:
         await websocket.close(code=4003)
         return
@@ -78,6 +85,11 @@ async def ws_device_shell(
         return
 
     await websocket.accept()
+    # Audit the session open (who connected to which device).
+    await record_audit_safe(
+        user, "ssh.open", target_type="device", target_id=str(device_id),
+        detail=str(device.ip_address),
+    )
 
     if not device.ssh_enabled or not device.ssh_username:
         await websocket.send_text("\r\n\x1b[31mSSH is not configured for this device.\x1b[0m\r\n")
@@ -162,6 +174,9 @@ async def ws_device_shell(
         except Exception:  # noqa: BLE001
             pass
     finally:
+        await record_audit_safe(
+            user, "ssh.close", target_type="device", target_id=str(device_id),
+        )
         try:
             await websocket.close()
         except Exception:  # noqa: BLE001

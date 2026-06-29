@@ -9,21 +9,24 @@ class Settings(BaseSettings):
     # injected by docker-compose) always take precedence over both.
     model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
 
-    # ── MSSQL connection parts ──────────────────────────────────────────────
-    # Edit these in .env. They are assembled into an aioodbc connection string.
-    # A named instance like  localhost\SQLEXPRESS  works as-is here (the
-    # odbc_connect form avoids URL-escaping headaches with the backslash).
-    MSSQL_SERVER: str = r"localhost\SQLEXPRESS"
-    MSSQL_DATABASE: str = "network"
-    MSSQL_USER: str = "sa"
-    MSSQL_PASSWORD: str = "changeme"
-    MSSQL_DRIVER: str = "ODBC Driver 17 for SQL Server"
-    MSSQL_ENCRYPT: str = "yes"
-    MSSQL_TRUST_CERT: str = "yes"
+    # ── PostgreSQL + TimescaleDB connection parts ───────────────────────────
+    # A single timescale/timescaledb container (Postgres + Timescale extension)
+    # holds both the relational data and the time-series ping history.
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "network"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "changeme"
 
     # Optional full override. If set, it is used verbatim and the parts above
-    # are ignored (e.g. to point at a different driver/host entirely).
+    # are ignored (e.g. to point at a managed Postgres instance).
     DATABASE_URL: str | None = None
+
+    # ── Redis: current-state cache + pub/sub bus ────────────────────────────
+    # The single collector publishes status changes to Redis; the API/WS
+    # gateways subscribe and serve the dashboard snapshot from the Redis cache
+    # instead of hammering Postgres on every login.
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     SECRET_KEY: str = "change-this-secret"
     ALGORITHM: str = "HS256"
@@ -61,19 +64,14 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_url(self) -> str:
-        """Async SQLAlchemy URL for SQL Server via aioodbc."""
+        """Async SQLAlchemy URL for PostgreSQL via asyncpg."""
         if self.DATABASE_URL:
             return self.DATABASE_URL
-        odbc = (
-            f"DRIVER={{{self.MSSQL_DRIVER}}};"
-            f"SERVER={self.MSSQL_SERVER};"
-            f"DATABASE={self.MSSQL_DATABASE};"
-            f"UID={self.MSSQL_USER};"
-            f"PWD={self.MSSQL_PASSWORD};"
-            f"Encrypt={self.MSSQL_ENCRYPT};"
-            f"TrustServerCertificate={self.MSSQL_TRUST_CERT};"
+        pwd = quote_plus(self.POSTGRES_PASSWORD)
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{pwd}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
-        return f"mssql+aioodbc:///?odbc_connect={quote_plus(odbc)}"
 
 
 settings = Settings()

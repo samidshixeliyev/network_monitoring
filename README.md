@@ -8,36 +8,42 @@ geographic coordinates and their status (online / offline / unknown) updates liv
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.12, FastAPI (async), SQLAlchemy 2.0, aioodbc |
-| Database | Microsoft SQL Server (MSSQL) |
+| Backend | Python 3.12, FastAPI (async), SQLAlchemy 2.0, asyncpg |
+| Database | PostgreSQL + TimescaleDB (single container — relational data + time-series ping history) |
+| Cache / bus | Redis (current-state snapshot cache + pub/sub between collector and gateways) |
 | Realtime | WebSockets (FastAPI native) |
 | ICMP | icmplib `async_multiping` — batched, no subprocesses |
 | Auth | JWT + passlib[bcrypt] |
 | Frontend | React 18, TypeScript, Vite, TanStack Query |
-| Map | Leaflet + react-leaflet — **fully offline** (bundled GeoJSON outline; optional self-hosted `.ecw/.tif` raster tiles) |
+| Map | Leaflet + react-leaflet — **fully offline** (bundled GeoJSON outline; optional self-hosted OSM raster tiles) |
 | Container | Docker + docker-compose |
 
 ---
 
 ## Prerequisites
 
-- **SQL Server** reachable from the backend (a local `SQLEXPRESS` instance is fine).
-  Create an empty database (default name `network`).
-- **ODBC Driver for SQL Server** installed on whatever host runs the backend
-  (Driver 17 or 18). On Windows this usually ships with SSMS; otherwise install
-  the [Microsoft ODBC Driver](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server).
-- Python 3.12 and Node 18+ for local runs.
+- **Docker + docker-compose** — the simplest path. The stack ships its own
+  PostgreSQL+TimescaleDB and Redis containers, so nothing external is needed.
+- For local (non-Docker) runs: a reachable **PostgreSQL** with the **TimescaleDB**
+  extension available, plus Python 3.12 and Node 18+.
 
-> **SQLEXPRESS note:** named instances (`localhost\SQLEXPRESS`) are easiest to
-> reach by running the backend **locally** (not in Docker). The Docker path
-> works too — see `docker-compose.yml` for the `host.docker.internal` setup.
+> **Recommended:** run the whole stack with Docker (`docker compose up`); it
+> brings up Postgres+Timescale, Redis, and the API together. The monitoring lab
+> in `lab/` additionally spins up pingable "network device" containers.
 
-## Quick Start (local — recommended for SQLEXPRESS)
+## Quick Start (Docker — recommended)
+
+```bash
+docker compose up -d --build     # db (Postgres+Timescale) + redis + api + frontend
+# API → http://localhost:8000   Frontend → http://localhost:5173
+```
+
+## Quick Start (local backend)
 
 ### 1. Configure
 ```bash
 cp .env.example .env
-# Edit .env — set MSSQL_* (server, database, user, password, driver),
+# Edit .env — set POSTGRES_* (host, port, db, user, password), REDIS_URL,
 # SECRET_KEY and DEFAULT_MANAGER_PASSWORD.
 ```
 
@@ -47,7 +53,8 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-alembic upgrade head            # create tables in MSSQL
+python create_db.py             # create the database if it doesn't exist
+alembic upgrade head            # create tables in Postgres
 python seed.py                  # roles + default manager account
 uvicorn app.main:app --reload   # http://localhost:8000
 ```
@@ -271,14 +278,13 @@ network_monitoring/
 
 | Variable | Default | Description |
 |---|---|---|
-| `MSSQL_SERVER` | `localhost\SQLEXPRESS` | SQL Server host / instance |
-| `MSSQL_DATABASE` | `network` | Database name (create it first) |
-| `MSSQL_USER` | `sa` | SQL login |
-| `MSSQL_PASSWORD` | `changeme` | SQL password |
-| `MSSQL_DRIVER` | `ODBC Driver 17 for SQL Server` | Installed ODBC driver name (17 or 18) |
-| `MSSQL_ENCRYPT` | `yes` | ODBC `Encrypt` |
-| `MSSQL_TRUST_CERT` | `yes` | ODBC `TrustServerCertificate` |
-| `DATABASE_URL` | — | Optional full override; ignores the `MSSQL_*` parts |
+| `POSTGRES_HOST` | `localhost` | Postgres/TimescaleDB host |
+| `POSTGRES_PORT` | `5432` | Postgres port |
+| `POSTGRES_DB` | `network` | Database name (auto-created by `create_db.py`) |
+| `POSTGRES_USER` | `postgres` | DB user |
+| `POSTGRES_PASSWORD` | `changeme` | DB password |
+| `DATABASE_URL` | — | Optional full override; ignores the `POSTGRES_*` parts |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis (snapshot cache + pub/sub bus) |
 | `SECRET_KEY` | — | JWT signing key — **change before deploy** |
 | `ALGORITHM` | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Token TTL |
@@ -297,12 +303,25 @@ network_monitoring/
 
 ## RBAC
 
+Access is **permission-based**. Roles are named bundles of permissions
+(`permissions` + `role_permissions` tables); the backend is the authoritative
+gate via a `require_permission(...)` FastAPI dependency, and the frontend only
+hides controls based on the same permission set returned at login.
+
+**Permissions:** `view`, `ssh`, `ack`, `mute`, `edit_device`, `edit_config`, `manage_users`
+
 | Role | Permissions |
 |---|---|
-| `manager` | Add, edit, delete devices; manage users; view all |
-| `user` | Read-only: view device status, event log |
+| `viewer` / `user` | `view` |
+| `operator` | `view`, `ssh`, `ack`, `mute` |
+| `engineer` | `view`, `ssh`, `ack`, `mute`, `edit_device`, `edit_config` |
+| `manager` | all of the above + `manage_users` |
 
-Enforced on the **backend** via a `require_role("manager")` FastAPI dependency injected into write endpoints. The frontend hides controls based on role, but the backend is the authoritative gate.
+- **SSH / web-shell is gated by the `ssh` permission** — regular viewers cannot
+  open a device shell (enforced on the WebSocket endpoint, not just the UI).
+- **Audit trail:** user actions (SSH open/close, device create/update/delete,
+  simulate, ssh-check) are written to `audit_logs` and exposed at
+  `GET /api/audit` (requires `manage_users`).
 
 ---
 
@@ -319,7 +338,8 @@ On any device status change the server pushes:
 
 ## Done
 - ✅ Offline Azerbaijan map with live, geo-placed device status
-- ✅ MSSQL backend (aioodbc)
+- ✅ PostgreSQL + TimescaleDB backend (asyncpg)
+- ✅ Redis current-state cache + pub/sub (dashboard snapshot served from Redis)
 
 ## Phase 2 (deferred)
 - Self-hosted `.ecw/.tif` raster tiles wired in by default (pipeline documented above)

@@ -5,6 +5,7 @@ import { fetchEvents } from '../api/events'
 import { DeviceForm } from './DeviceForm'
 import { WebShell } from './WebShell'
 import { StatusBadge } from './StatusBadge'
+import { useAuth } from '../hooks/useAuth'
 import type { Device, DeviceUpdate, SshFacts } from '../types'
 import { DEVICE_TYPE_LABELS } from '../lib/deviceIcons'
 
@@ -27,6 +28,11 @@ interface Props {
 
 export function DeviceDrawer({ device, isManager, onClose }: Props) {
   const qc = useQueryClient()
+  const { hasPermission } = useAuth()
+  // Backend enforces these; the UI only hides controls the user can't use.
+  const canSsh = hasPermission('ssh')
+  const canEditDevice = hasPermission('edit_device') || isManager
+  const canEditConfig = hasPermission('edit_config') || isManager
   const [editing, setEditing] = useState(false)
   const [showShell, setShowShell] = useState(false)
 
@@ -188,7 +194,7 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
                     : 'Hələ toplanmayıb'}
                 </div>
               </div>
-              {isManager && (
+              {canSsh && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button
                     onClick={() => sshM.mutate(device.id)}
@@ -209,7 +215,7 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
           )}
 
           {/* Manual status simulation (testing) */}
-          {isManager && (
+          {canEditConfig && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
                 Test: status idarəsi
@@ -233,8 +239,8 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
             </div>
           )}
 
-          {/* Manager actions */}
-          {isManager && (
+          {/* Edit / delete (device-edit permission) */}
+          {canEditDevice && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
               <button
                 onClick={() => setEditing(true)}

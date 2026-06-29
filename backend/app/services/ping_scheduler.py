@@ -12,7 +12,8 @@ from app.db.session import AsyncSessionLocal
 from app.models import Device, EventLog
 from app.models.device import DeviceStatus
 from app.models.event_log import EventType
-from app.services.ws_manager import ws_manager
+from app.schemas.device import serialize_device
+from app.services import state_cache
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +99,16 @@ async def _check_one(device_id: uuid.UUID) -> None:
                 session.add(EventLog(device_id=device.id, event_type=EventType.came_online))
             elif new_status == DeviceStatus.offline:
                 session.add(EventLog(device_id=device.id, event_type=EventType.went_offline))
-            await session.flush()
-            # Broadcast every change (incl. → unknown) so the map recolors live.
-            await ws_manager.broadcast(device.id, new_status.value, now)
+            await session.commit()
+            # refresh() reloads server-generated columns (updated_at) in-context;
+            # serializing them lazily after commit would trigger sync IO → error.
+            await session.refresh(device)
+            serialized = serialize_device(device)
+            # Refresh the Redis snapshot + publish the delta to all gateways.
+            # Every change (incl. → unknown) is published so the map recolors live.
+            await state_cache.update_and_publish(serialized, new_status.value, now)
             logger.info("device %s: %s → %s", ip, prev_status.value, new_status.value)
+            return
 
         await session.commit()
 
@@ -112,7 +119,7 @@ async def _refresh_schedule(now: float, interval: int) -> None:
     they don't all fire together) and drop removed/disabled ones."""
     async with AsyncSessionLocal() as session:
         ids = list(
-            await session.scalars(select(Device.id).where(Device.is_enabled == True))  # noqa: E712
+            await session.scalars(select(Device.id).where(Device.is_enabled.is_(True)))
         )
     id_set = set(ids)
 

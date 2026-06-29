@@ -348,8 +348,8 @@ On any device status change the server pushes:
 - ✅ SSH telemetry + browser web terminal
 - ✅ Separate collector process (single source) + adaptive probe scheduling
 - ✅ Self-monitoring heartbeat (`GET /api/monitor/heartbeat`)
+- ✅ Ping latency + uptime history (TimescaleDB hypertable) + trend chart per device
 
 ## Roadmap (in progress)
-- Ping/latency history (TimescaleDB) + trend charts
 - Alert rules + escalation (Telegram/email), dependencies, maintenance windows, SLA reports
 - Multi-condition checks (TCP/HTTP), dashboard search/filter/group-by-region

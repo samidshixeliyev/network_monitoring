@@ -4,6 +4,7 @@ import { devicesApi } from '../api/devices'
 import { fetchEvents } from '../api/events'
 import { DeviceForm } from './DeviceForm'
 import { WebShell } from './WebShell'
+import { LatencyChart } from './LatencyChart'
 import { StatusBadge } from './StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import type { Device, DeviceUpdate, SshFacts } from '../types'
@@ -256,6 +257,11 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
               </button>
             </div>
           )}
+
+          {/* Latency / uptime trend (TimescaleDB) */}
+          <div style={{ marginBottom: 18 }}>
+            <LatencyChart deviceId={device.id} />
+          </div>
 
           {/* Event history */}
           <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>

@@ -101,6 +101,13 @@ export interface WsStatusMessage {
   last_checked_at: string
 }
 
+export interface HistoryPoint {
+  ts: string
+  avg_rtt_ms: number | null
+  uptime_pct: number
+  samples: number
+}
+
 // The gateway coalesces status changes into a single batch frame (~250ms window).
 export interface WsBatchMessage {
   type: 'batch'

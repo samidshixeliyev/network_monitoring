@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Device, DeviceCreate, DeviceUpdate, SshCheckResult } from '../types'
+import type { Device, DeviceCreate, DeviceUpdate, HistoryPoint, SshCheckResult } from '../types'
 
 export const devicesApi = {
   list: async (): Promise<Device[]> => {
@@ -23,6 +23,12 @@ export const devicesApi = {
   },
   sshCheck: async (id: string): Promise<SshCheckResult> => {
     const { data } = await apiClient.post<SshCheckResult>(`/devices/${id}/ssh-check`, {})
+    return data
+  },
+  history: async (id: string, range = '24h'): Promise<HistoryPoint[]> => {
+    const { data } = await apiClient.get<HistoryPoint[]>(`/devices/${id}/history`, {
+      params: { range },
+    })
     return data
   },
 }

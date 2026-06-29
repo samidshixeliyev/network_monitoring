@@ -2,8 +2,9 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -202,6 +203,68 @@ async def ssh_check_device(
         raise HTTPException(status_code=400, detail="SSH is not configured for this device")
     # collect_device persists the new ssh_* fields AND refreshes the Redis snapshot.
     return SshCheckResult(**result)
+
+
+class HistoryPoint(BaseModel):
+    ts: datetime
+    avg_rtt_ms: float | None
+    uptime_pct: float
+    samples: int
+
+
+# range → (window interval, bucket interval) for the time-series query.
+_HISTORY_RANGES = {
+    "1h": ("1 hour", "1 minute"),
+    "24h": ("24 hours", "5 minutes"),
+    "7d": ("7 days", "1 hour"),
+    "30d": ("30 days", "6 hours"),
+}
+
+
+@router.get("/{device_id}/history", response_model=list[HistoryPoint])
+async def device_history(
+    device_id: uuid.UUID,
+    range: str = Query("24h"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[HistoryPoint]:
+    """Time-bucketed latency + uptime for a device (TimescaleDB). Powers the
+    latency trend chart in the drawer."""
+    window, bucket = _HISTORY_RANGES.get(range, _HISTORY_RANGES["24h"])
+    # bucket/window come from the server-controlled whitelist above (no user
+    # input), so they're inlined as literals — binding them as params makes
+    # asyncpg mis-infer their type as `interval` and reject the string.
+    stmt = text(
+        f"""
+        SELECT time_bucket(INTERVAL '{bucket}', ts) AS bucket,
+               avg(rtt_ms) FILTER (WHERE success)   AS avg_rtt,
+               count(*)                             AS total,
+               count(*) FILTER (WHERE success)      AS up
+        FROM ping_history
+        WHERE device_id = :did AND ts >= now() - INTERVAL '{window}'
+        GROUP BY bucket
+        ORDER BY bucket
+        """
+    )
+    try:
+        rows = (await db.execute(stmt, {"did": device_id})).all()
+    except Exception as exc:  # noqa: BLE001 — e.g. time_bucket missing on vanilla PG
+        logger.warning("history query failed for %s: %s", device_id, exc)
+        return []
+
+    points: list[HistoryPoint] = []
+    for bucket_ts, avg_rtt, total, up in rows:
+        total = int(total or 0)
+        up = int(up or 0)
+        points.append(
+            HistoryPoint(
+                ts=bucket_ts,
+                avg_rtt_ms=round(float(avg_rtt), 2) if avg_rtt is not None else None,
+                uptime_pct=round(up / total * 100, 1) if total else 0.0,
+                samples=total,
+            )
+        )
+    return points
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)

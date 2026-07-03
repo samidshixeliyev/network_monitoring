@@ -5,8 +5,9 @@ export type EventType = 'came_online' | 'went_offline'
 export type UserRole = 'manager' | 'engineer' | 'operator' | 'viewer' | 'user' | string
 
 // Permission names returned by the backend (authoritative gate lives there).
+// NOTE: alarm ack is NOT a permission — any authenticated user can ack.
 export type Permission =
-  | 'view' | 'snmp' | 'ssh' | 'ack' | 'mute' | 'edit_device' | 'edit_config' | 'manage_users'
+  | 'view' | 'snmp' | 'ssh' | 'mute' | 'edit_device' | 'edit_config' | 'manage_users'
 
 export interface Device {
   id: string

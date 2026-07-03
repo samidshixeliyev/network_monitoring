@@ -55,7 +55,8 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
   const canSsh = hasPermission('ssh') || isManager
   const canEditDevice = hasPermission('edit_device') || isManager
   const canEditConfig = hasPermission('edit_config') || isManager
-  const canAck = hasPermission('ack') || isManager
+  // Alarm acknowledgement is open to every authenticated user (ops decision).
+  const canAck = true
   // Mute/maintenance is an admin action (per ops policy) — manager only.
   const canMute = isManager
   const [editing, setEditing] = useState(false)

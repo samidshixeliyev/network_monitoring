@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_permission
 from app.core.config import settings
-from app.core.permissions import ACK, EDIT_CONFIG, EDIT_DEVICE, MUTE, SNMP, SSH
+from app.core.permissions import EDIT_CONFIG, EDIT_DEVICE, MUTE, SNMP, SSH
 from app.db.session import get_db
 from app.models import Device, EventLog, User
 from app.models.device import DeviceStatus
@@ -399,9 +399,10 @@ async def _get_or_404(db: AsyncSession, device_id: uuid.UUID) -> Device:
 async def ack_device(
     device_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(ACK)),
+    current_user: User = Depends(get_current_user),
 ) -> Device:
-    """Acknowledge the device's current alarm (cleared automatically on recovery)."""
+    """Acknowledge the device's current alarm (cleared automatically on
+    recovery). Deliberately NOT permission-gated — any authenticated user."""
     device = await _get_or_404(db, device_id)
     device.alarm_acked_at = datetime.now(timezone.utc)
     add_audit(db, current_user, "device.ack", target_type="device", target_id=str(device_id))

@@ -24,7 +24,7 @@ import { deviceGlyphSvg } from '../lib/deviceIcons'
 const TILES_URL =
   (import.meta.env.VITE_TILES_URL as string | undefined) ?? '/tiles/osm/{z}/{x}/{y}.png?v=2'
 // Highest zoom we have tiles for (the prefetch script defaults to z9).
-const MAX_TILE_ZOOM = Number(import.meta.env.VITE_TILES_MAX_ZOOM ?? 9)
+const MAX_TILE_ZOOM = Number(import.meta.env.VITE_TILES_MAX_ZOOM ?? 11)
 
 const STATUS_COLOR: Record<DeviceStatus, string> = {
   online: '#16a34a',

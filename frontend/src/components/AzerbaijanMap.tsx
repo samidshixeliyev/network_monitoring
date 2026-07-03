@@ -19,8 +19,10 @@ import { deviceGlyphSvg } from '../lib/deviceIcons'
 // Offline OSM raster basemap (z0–z9), pre-downloaded into backend/tiles/osm and
 // served at /tiles/osm/... — fully offline, no internet tile providers. Override
 // the URL via VITE_TILES_URL if serving tiles from elsewhere.
+// ?v=2 busts browser caches that still hold the old OSM "Access blocked" error
+// tiles (served without Cache-Control, so browsers kept them past the re-download).
 const TILES_URL =
-  (import.meta.env.VITE_TILES_URL as string | undefined) ?? '/tiles/osm/{z}/{x}/{y}.png'
+  (import.meta.env.VITE_TILES_URL as string | undefined) ?? '/tiles/osm/{z}/{x}/{y}.png?v=2'
 // Highest zoom we have tiles for (the prefetch script defaults to z9).
 const MAX_TILE_ZOOM = Number(import.meta.env.VITE_TILES_MAX_ZOOM ?? 9)
 

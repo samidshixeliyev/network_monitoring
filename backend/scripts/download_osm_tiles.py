@@ -9,12 +9,16 @@ Defaults cover Azerbaijan. Override via env or args:
     MIN_ZOOM=0 MAX_ZOOM=9 python scripts/download_osm_tiles.py
     python scripts/download_osm_tiles.py --bbox 44.5,38.0,50.6,42.0
 
-Tile source defaults to the public OSM server; for heavier use point TILE_SERVER
-at your own / licensed tile server (OSM's tile usage policy forbids bulk use).
+Tile source defaults to CARTO's free OSM-based basemap (tile.openstreetmap.org
+serves an "Access blocked" tile with HTTP 200 for bulk/script downloads, so it
+cannot be trusted here); for heavier use point TILE_SERVER at your own /
+licensed tile server. Attribution: © OpenStreetMap contributors © CARTO.
 """
 import argparse
+import hashlib
 import math
 import os
+import sys
 import time
 import urllib.request
 
@@ -22,10 +26,10 @@ import urllib.request
 DEFAULT_BBOX = (44.5, 38.0, 50.6, 42.0)
 MIN_ZOOM = int(os.getenv("MIN_ZOOM", "0"))
 MAX_ZOOM = int(os.getenv("MAX_ZOOM", "9"))
-TILE_SERVER = os.getenv("TILE_SERVER", "https://tile.openstreetmap.org")
+TILE_SERVER = os.getenv("TILE_SERVER", "https://basemaps.cartocdn.com/rastertiles/voyager")
 USER_AGENT = os.getenv(
     "TILE_USER_AGENT",
-    "network-monitoring-offline-tiles/1.0 (one-time bbox prefetch; contact admin)",
+    "network-monitoring-offline-tiles/1.0 (one-time bbox prefetch; contact: aliagha.huseynli@gmail.com)",
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,6 +47,11 @@ def deg2num(lat: float, lon: float, z: int) -> tuple[int, int]:
 def download(bbox: tuple[float, float, float, float]) -> None:
     west, south, east, north = bbox
     total = downloaded = skipped = failed = 0
+    # Guard against servers that answer HTTP 200 with an identical "access
+    # blocked" error tile for every request (tile.openstreetmap.org does this):
+    # if the first several downloads are byte-identical, abort — real map tiles
+    # for different z/x/y are never all the same image.
+    seen_hashes: set[str] = set()
     for z in range(MIN_ZOOM, MAX_ZOOM + 1):
         x0, y0 = deg2num(north, west, z)   # top-left
         x1, y1 = deg2num(south, east, z)   # bottom-right
@@ -62,12 +71,19 @@ def download(bbox: tuple[float, float, float, float]) -> None:
                     with open(dest, "wb") as f:
                         f.write(data)
                     downloaded += 1
+                    seen_hashes.add(hashlib.sha256(data).hexdigest())
+                    if downloaded >= 8 and len(seen_hashes) == 1:
+                        sys.exit(
+                            f"ABORT: first {downloaded} tiles are byte-identical — "
+                            f"{TILE_SERVER} is serving an error/blocked tile. "
+                            "Try another TILE_SERVER."
+                        )
                     time.sleep(0.1)  # be polite to the tile server
                 except Exception as exc:  # noqa: BLE001
                     failed += 1
                     print(f"  FAIL z{z}/{x}/{y}: {exc}")
         print(f"zoom {z}: done ({downloaded} new, {skipped} cached, {failed} failed so far)")
-    print(f"\nTotal {total} tiles → {os.path.abspath(OUT_DIR)}")
+    print(f"\nTotal {total} tiles -> {os.path.abspath(OUT_DIR)}")
     print(f"  downloaded={downloaded} skipped={skipped} failed={failed}")
 
 

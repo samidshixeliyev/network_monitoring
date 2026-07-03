@@ -111,10 +111,14 @@ The API auto-serves `backend/tiles/` at `/tiles/...` (see `app/main.py`), and th
 frontend loads `/tiles/osm/{z}/{x}/{y}.png` by default (no env needed). The
 bundled GeoJSON outline overlays the imagery as a thin border.
 
-> OSM's tile usage policy forbids bulk downloading from the public server — the
-> one-time ~100-tile bbox prefetch is fine, but for larger areas/zooms point
-> `TILE_SERVER` at your own or a licensed tile server. Tiles are gitignored
-> (`backend/tiles/`) since they're generated binary assets.
+> The default tile source is CARTO's free OSM-based basemap ("voyager" style,
+> attribution © OpenStreetMap contributors © CARTO). `tile.openstreetmap.org`
+> is NOT usable here: its usage policy forbids scripted/bulk downloads and it
+> answers them with an "Access blocked" error tile served as HTTP 200, which
+> ends up saved as the basemap. The script now aborts if it detects identical
+> (blocked) tiles. For larger areas/zooms point `TILE_SERVER` at your own or a
+> licensed tile server. Tiles are gitignored (`backend/tiles/`) since they're
+> generated binary assets.
 >
 > Override the URL/zoom with `VITE_TILES_URL` / `VITE_TILES_MAX_ZOOM` if needed.
 

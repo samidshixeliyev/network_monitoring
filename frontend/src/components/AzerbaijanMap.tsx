@@ -143,7 +143,7 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
           background: '#dbeafe', // "water" behind the land outline
           cursor: placing ? 'crosshair' : undefined,
         }}
-        attributionControl={false}
+        attributionControl
         zoomControl
       >
         <FitAzerbaijan />
@@ -151,7 +151,12 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
         {/* Offline OSM raster basemap (z0–z9). maxNativeZoom caps tile requests
             at what we actually downloaded; Leaflet upscales beyond if needed. */}
         {TILES_URL && (
-          <TileLayer url={TILES_URL} maxNativeZoom={MAX_TILE_ZOOM} maxZoom={18} />
+          <TileLayer
+            url={TILES_URL}
+            maxNativeZoom={MAX_TILE_ZOOM}
+            maxZoom={18}
+            attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+          />
         )}
 
         {/* Country / district outline (bundled, fully offline). */}

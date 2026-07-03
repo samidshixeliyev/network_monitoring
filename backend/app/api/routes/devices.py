@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -282,6 +284,100 @@ async def device_snmp_history(
         )
         for bucket_ts, cpu, mem, in_bps, out_bps in rows
     ]
+
+
+# ── Manual diagnostics: ping + traceroute ────────────────────────────────────
+class PingNowRequest(BaseModel):
+    count: Annotated[int, Field(ge=1, le=10)] = 4
+
+
+class PingNowResult(BaseModel):
+    alive: bool
+    rtts_ms: list[float]
+    packets_sent: int
+    packets_received: int
+    packet_loss_pct: float
+    min_ms: float | None
+    avg_ms: float | None
+    max_ms: float | None
+
+
+async def _icmp_ping(ip: str, count: int):
+    """icmplib ping with raw-socket → unprivileged fallback (the backend image
+    setcaps CAP_NET_RAW on python, so privileged normally works in Docker)."""
+    from icmplib import async_ping
+
+    try:
+        return await async_ping(ip, count=count, timeout=settings.PING_TIMEOUT_SECONDS, privileged=True)
+    except OSError:
+        return await async_ping(ip, count=count, timeout=settings.PING_TIMEOUT_SECONDS, privileged=False)
+
+
+@router.post("/{device_id}/ping", response_model=PingNowResult)
+async def ping_device_now(
+    device_id: uuid.UUID,
+    body: PingNowRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> PingNowResult:
+    """Manual on-demand ping from the monitoring server (diagnostics panel)."""
+    device = await _get_or_404(db, device_id)
+    try:
+        host = await _icmp_ping(str(device.ip_address), body.count)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"ping failed: {exc}")
+    rtts = [round(r, 2) for r in host.rtts]
+    return PingNowResult(
+        alive=host.is_alive,
+        rtts_ms=rtts,
+        packets_sent=host.packets_sent,
+        packets_received=host.packets_received,
+        packet_loss_pct=round(host.packet_loss * 100, 1),
+        min_ms=round(host.min_rtt, 2) if rtts else None,
+        avg_ms=round(host.avg_rtt, 2) if rtts else None,
+        max_ms=round(host.max_rtt, 2) if rtts else None,
+    )
+
+
+class TraceHop(BaseModel):
+    distance: int
+    address: str | None
+    rtt_ms: float | None
+
+
+@router.post("/{device_id}/traceroute", response_model=list[TraceHop])
+async def traceroute_device(
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[TraceHop]:
+    """Manual traceroute from the monitoring server. icmplib's traceroute is
+    synchronous (raw sockets + TTL) → run in a worker thread. Unanswered hops
+    come back as gaps in `distance`; we fill them in as address=None rows."""
+    device = await _get_or_404(db, device_id)
+    from icmplib import traceroute
+
+    try:
+        hops = await asyncio.to_thread(
+            traceroute, str(device.ip_address), count=1, timeout=1, max_hops=20,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"traceroute failed: {exc}")
+
+    result: list[TraceHop] = []
+    last = 0
+    for hop in hops:
+        for missing in range(last + 1, hop.distance):
+            result.append(TraceHop(distance=missing, address=None, rtt_ms=None))
+        result.append(
+            TraceHop(
+                distance=hop.distance,
+                address=hop.address,
+                rtt_ms=round(hop.avg_rtt, 2) if hop.is_alive else None,
+            )
+        )
+        last = hop.distance
+    return result
 
 
 class MuteRequest(BaseModel):

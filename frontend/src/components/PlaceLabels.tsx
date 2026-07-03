@@ -19,12 +19,15 @@ interface Place {
 
 const PLACES = azPlaces as Place[]
 
-// Zoom at which each settlement tier starts to show.
-const MIN_ZOOM: Record<Place['t'], number> = {
-  city: 0,
-  town: 8,
-  suburb: 10,
-  village: 11,
+// Zoom at which a settlement starts to show — graded by importance so the
+// initial view shows the major rayon centres and more names appear gradually
+// as you zoom in (big cities → all cities/big towns → all towns → suburbs →
+// villages).
+function minZoomFor(place: Place): number {
+  if (place.t === 'city') return place.p >= 100_000 ? 0 : 7
+  if (place.t === 'town') return place.p >= 15_000 ? 7 : 8
+  if (place.t === 'suburb') return 10
+  return place.p >= 10_000 ? 10 : 11
 }
 
 const PANE = 'nm-place-labels'
@@ -77,7 +80,7 @@ export function PlaceLabels() {
   return (
     <>
       {PLACES.map((place, i) =>
-        zoom >= MIN_ZOOM[place.t] ? (
+        zoom >= minZoomFor(place) ? (
           <Marker
             key={`${place.n}-${place.lat}-${place.lon}`}
             position={[place.lat, place.lon]}

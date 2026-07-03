@@ -141,6 +141,9 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
       <MapContainer
         center={[40.3, 47.7]}
         zoom={7}
+        // Cap zooming at the deepest level we actually have tiles for, so
+        // users never zoom into an empty (blue) map.
+        maxZoom={MAX_TILE_ZOOM}
         style={{
           width: '100%',
           height: '100%',
@@ -158,7 +161,7 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
           <TileLayer
             url={TILES_URL}
             maxNativeZoom={MAX_TILE_ZOOM}
-            maxZoom={18}
+            maxZoom={MAX_TILE_ZOOM}
             attribution="&copy; OpenStreetMap contributors &copy; CARTO"
           />
         )}

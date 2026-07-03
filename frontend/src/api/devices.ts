@@ -1,7 +1,7 @@
 import { apiClient } from './client'
 import type {
-  Device, DeviceCreate, DeviceUpdate, HistoryPoint,
-  SnmpCheckResult, SnmpHistoryPoint, SshCheckResult,
+  Device, DeviceCreate, DeviceUpdate, HistoryPoint, PingNowResult,
+  SnmpCheckResult, SnmpHistoryPoint, SshCheckResult, TraceHop,
 } from '../types'
 
 export const devicesApi = {
@@ -26,6 +26,14 @@ export const devicesApi = {
   },
   sshCheck: async (id: string): Promise<SshCheckResult> => {
     const { data } = await apiClient.post<SshCheckResult>(`/devices/${id}/ssh-check`, {})
+    return data
+  },
+  pingNow: async (id: string, count = 4): Promise<PingNowResult> => {
+    const { data } = await apiClient.post<PingNowResult>(`/devices/${id}/ping`, { count })
+    return data
+  },
+  traceroute: async (id: string): Promise<TraceHop[]> => {
+    const { data } = await apiClient.post<TraceHop[]>(`/devices/${id}/traceroute`, {})
     return data
   },
   snmpCheck: async (id: string): Promise<SnmpCheckResult> => {

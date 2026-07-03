@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
 import type { Device, SnmpFacts, SnmpHistoryPoint } from '../types'
@@ -149,12 +149,35 @@ interface Props {
   canPoll: boolean
 }
 
+// Live-mode poll cadence — the on-demand snmp-check endpoint takes ~1s per
+// device, 5s keeps it responsive without hammering the device.
+const LIVE_INTERVAL_MS = 5_000
+
 export function SnmpPanel({ device, canPoll }: Props) {
   const qc = useQueryClient()
+  const [live, setLive] = useState(false)
   const snmpM = useMutation({
     mutationFn: (id: string) => devicesApi.snmpCheck(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }); qc.invalidateQueries({ queryKey: ['device-snmp-history'] }) },
   })
+  // Keep a ref so the effects below don't need snmpM in their deps (the
+  // mutation object identity changes every render).
+  const pollRef = useRef(snmpM.mutate)
+  pollRef.current = snmpM.mutate
+
+  // Poll immediately when a device is opened, so the panel shows the CURRENT
+  // state instead of data up to one collector interval (30s) old.
+  useEffect(() => {
+    setLive(false)
+    if (canPoll) pollRef.current(device.id)
+  }, [device.id, canPoll])
+
+  // Live mode: keep re-polling while enabled (and stop when the panel closes).
+  useEffect(() => {
+    if (!live || !canPoll) return
+    const t = setInterval(() => pollRef.current(device.id), LIVE_INTERVAL_MS)
+    return () => clearInterval(t)
+  }, [live, canPoll, device.id])
 
   let facts: SnmpFacts | null = null
   try { facts = device.snmp_facts ? JSON.parse(device.snmp_facts) as SnmpFacts : null } catch { /* ignore */ }
@@ -216,13 +239,26 @@ export function SnmpPanel({ device, canPoll }: Props) {
       </div>
 
       {canPoll && (
-        <button
-          onClick={() => snmpM.mutate(device.id)}
-          disabled={snmpM.isPending}
-          style={{ width: '100%', marginTop: 8, padding: '7px', borderRadius: 6, border: '1px solid #93c5fd', background: '#fff', color: '#1e40af', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600, opacity: snmpM.isPending ? 0.6 : 1 }}
-        >
-          {snmpM.isPending ? 'Sorğulanır…' : '⟳ SNMP yoxla'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button
+            onClick={() => snmpM.mutate(device.id)}
+            disabled={snmpM.isPending}
+            style={{ flex: 1, padding: '7px', borderRadius: 6, border: '1px solid #93c5fd', background: '#fff', color: '#1e40af', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600, opacity: snmpM.isPending ? 0.6 : 1 }}
+          >
+            {snmpM.isPending ? 'Sorğulanır…' : '⟳ SNMP yoxla'}
+          </button>
+          <button
+            onClick={() => setLive(v => !v)}
+            style={{
+              flex: 1, padding: '7px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 600,
+              border: '1px solid ' + (live ? '#16a34a' : '#e2e8f0'),
+              background: live ? '#dcfce7' : '#fff',
+              color: live ? '#166534' : '#475569',
+            }}
+          >
+            {live ? '⏸ Canlı: aktiv' : '▶ Canlı rejim (5s)'}
+          </button>
+        </div>
       )}
 
       <SnmpChart deviceId={device.id} />

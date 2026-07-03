@@ -53,6 +53,18 @@ OID_HR_STORAGE_DESCR = "1.3.6.1.2.1.25.2.3.1.3"
 OID_HR_STORAGE_UNITS = "1.3.6.1.2.1.25.2.3.1.4"
 OID_HR_STORAGE_SIZE = "1.3.6.1.2.1.25.2.3.1.5"
 OID_HR_STORAGE_USED = "1.3.6.1.2.1.25.2.3.1.6"
+# ── Vendor CPU/memory (tried in order when HOST-RESOURCES yields nothing) ────
+# Cisco (CISCO-PROCESS-MIB / CISCO-MEMORY-POOL-MIB)
+OID_CISCO_CPU_5MIN = "1.3.6.1.4.1.9.9.109.1.1.1.1.8"   # cpmCPUTotal5minRev, walk
+OID_CISCO_MEM_USED = "1.3.6.1.4.1.9.9.48.1.1.1.5"      # ciscoMemoryPoolUsed
+OID_CISCO_MEM_FREE = "1.3.6.1.4.1.9.9.48.1.1.1.6"      # ciscoMemoryPoolFree
+# Juniper (JUNIPER-MIB jnxOperatingTable — RE/FPC rows)
+OID_JUNIPER_CPU = "1.3.6.1.4.1.2636.3.1.13.1.8"        # jnxOperatingCPU, walk
+OID_JUNIPER_MEM = "1.3.6.1.4.1.2636.3.1.13.1.11"       # jnxOperatingBuffer (%), walk
+# Nokia SR OS (TIMETRA-SYSTEM-MIB)
+OID_NOKIA_CPU = "1.3.6.1.4.1.6527.3.1.2.1.1.1.0"       # sgiCpuUsage (%)
+OID_NOKIA_MEM_USED = "1.3.6.1.4.1.6527.3.1.2.1.1.9.0"   # sgiMemoryUsed (bytes)
+OID_NOKIA_MEM_AVAIL = "1.3.6.1.4.1.6527.3.1.2.1.1.10.0"  # sgiMemoryAvailable
 
 # Last-seen interface counters per device, for rate computation between polls:
 # {device_id: {"t": monotonic, "if": {ifindex: (in_octets, out_octets)}}}
@@ -152,6 +164,54 @@ def _mem_percent(descrs: dict, units: dict, sizes: dict, useds: dict) -> float |
     return None
 
 
+async def _vendor_cpu(snmp: "_Snmp") -> float | None:
+    """CPU % via vendor MIBs: Cisco → Juniper → Nokia (first that answers)."""
+    for oid in (OID_CISCO_CPU_5MIN, OID_JUNIPER_CPU):
+        try:
+            rows = await snmp.walk(oid)
+            vals = [int(v) for v in rows.values() if int(v) > 0]
+            if vals:
+                return round(sum(vals) / len(vals), 1)
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        vals = await snmp.get(OID_NOKIA_CPU)
+        if vals:
+            return round(float(int(next(iter(vals.values())))), 1)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+async def _vendor_mem(snmp: "_Snmp") -> float | None:
+    """Memory % via vendor MIBs: Cisco pools → Juniper buffer → Nokia."""
+    try:
+        used_rows = await snmp.walk(OID_CISCO_MEM_USED)
+        free_rows = await snmp.walk(OID_CISCO_MEM_FREE)
+        used = sum(int(v) for v in used_rows.values())
+        free = sum(int(v) for v in free_rows.values())
+        if used + free > 0:
+            return round(used / (used + free) * 100, 1)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        rows = await snmp.walk(OID_JUNIPER_MEM)
+        vals = [int(v) for v in rows.values() if int(v) > 0]
+        if vals:
+            return round(sum(vals) / len(vals), 1)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        vals = await snmp.get(OID_NOKIA_MEM_USED, OID_NOKIA_MEM_AVAIL)
+        used = int(vals[OID_NOKIA_MEM_USED])
+        avail = int(vals[OID_NOKIA_MEM_AVAIL])
+        if used + avail > 0:
+            return round(used / (used + avail) * 100, 1)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 async def _run_collection(device_id: uuid.UUID, host: str, port: int, community: str) -> dict:
     """Poll one device. Returns {facts, cpu, mem, in_bps, out_bps}. Raises on
     timeout/SNMP errors."""
@@ -159,7 +219,8 @@ async def _run_collection(device_id: uuid.UUID, host: str, port: int, community:
     try:
         sys_vals = await snmp.get(OID_SYS_DESCR, OID_SYS_UPTIME, OID_SYS_NAME)
 
-        # CPU: average across hrProcessorLoad rows (absent on many network gear).
+        # CPU: average across hrProcessorLoad rows (servers/net-snmp), falling
+        # back to vendor MIBs (Cisco/Juniper/Nokia gear rarely exposes HR).
         cpu: float | None = None
         try:
             loads = await snmp.walk(OID_HR_CPU_LOAD)
@@ -168,8 +229,10 @@ async def _run_collection(device_id: uuid.UUID, host: str, port: int, community:
                 cpu = round(sum(vals) / len(vals), 1)
         except Exception:  # noqa: BLE001 — optional MIB
             pass
+        if cpu is None:
+            cpu = await _vendor_cpu(snmp)
 
-        # Memory via hrStorage (optional as well).
+        # Memory via hrStorage, falling back to vendor MIBs.
         mem: float | None = None
         try:
             descrs = await snmp.walk(OID_HR_STORAGE_DESCR)
@@ -180,6 +243,8 @@ async def _run_collection(device_id: uuid.UUID, host: str, port: int, community:
                 mem = _mem_percent(descrs, units, sizes, useds)
         except Exception:  # noqa: BLE001
             pass
+        if mem is None:
+            mem = await _vendor_mem(snmp)
 
         # Interfaces: names + oper status + counters (prefer 64-bit HC).
         if_descr = await snmp.walk(OID_IF_DESCR)

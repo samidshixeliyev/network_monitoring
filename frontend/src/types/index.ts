@@ -95,6 +95,22 @@ export interface SnmpHistoryPoint {
   out_bps: number | null
 }
 
+export interface PingNowResult {
+  alive: boolean
+  rtts_ms: number[]
+  packets_sent: number
+  packets_received: number
+  packet_loss_pct: number
+  min_ms: number | null
+  avg_ms: number | null
+  max_ms: number | null
+}
+export interface TraceHop {
+  distance: number
+  address: string | null
+  rtt_ms: number | null
+}
+
 export interface DeviceCreate {
   vendor_name: string
   ip_address: string

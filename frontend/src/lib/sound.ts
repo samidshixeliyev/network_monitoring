@@ -75,6 +75,20 @@ function tone(a: AudioContext, freq: number, start: number, dur: number, gainV: 
   osc.stop(t0 + start + dur + 0.02)
 }
 
+/** Short confirmation beep — used by the header 🔔 toggle so the user can
+ * instantly HEAR that audio works (the toggle click also unlocks the context). */
+export function playTestBeep(): void {
+  try {
+    const a = ensureCtx()
+    if (!a) return
+    if (a.state === 'suspended') void a.resume()
+    tone(a, 660, 0, 0.12, 0.18)
+    tone(a, 880, 0.14, 0.16, 0.18)
+  } catch {
+    /* ignore */
+  }
+}
+
 export type AlertKind = 'down' | 'up' | 'critical'
 
 // Alerts repeat to fill this many seconds so a down/up event is clearly audible

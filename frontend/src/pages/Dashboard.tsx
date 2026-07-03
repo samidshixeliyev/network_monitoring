@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
@@ -12,7 +12,7 @@ import { HeartbeatBadge } from '../components/HeartbeatBadge'
 import { Toaster, type Toast } from '../components/Toaster'
 import { useAuth } from '../hooks/useAuth'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { playAlert, isSoundEnabled, setSoundEnabled } from '../lib/sound'
+import { playAlert, playTestBeep, isSoundEnabled, setSoundEnabled } from '../lib/sound'
 import type { Device, DeviceCreate, WsStatusMessage, WsBatchMessage } from '../types'
 
 const WS_PROTO = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -55,6 +55,8 @@ export function Dashboard() {
     const next = !soundOn
     setSoundOn(next)
     setSoundEnabled(next)   // persists + unlocks the AudioContext (this click is a user gesture)
+    // Audible confirmation so the user can verify sound actually works.
+    if (next) playTestBeep()
   }
 
   const startAdd = () => {
@@ -103,6 +105,18 @@ export function Dashboard() {
     setSelected(prev => (prev?.id === d.id ? null : d))
   }, [])
 
+  // Last status seen PER DEVICE, updated only here (WS) + seeded from the first
+  // devices load. Comparing against the react-query cache instead is racy: a
+  // mutation (e.g. the simulate buttons) refetches the new status BEFORE the
+  // coalesced WS batch (~250ms) arrives, the diff disappears, and the toast +
+  // alert sound never fire.
+  const lastStatusRef = useRef<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (lastStatusRef.current.size === 0 && devices.length > 0) {
+      lastStatusRef.current = new Map(devices.map(d => [d.id, d.current_status]))
+    }
+  }, [devices])
+
   const handleWs = useCallback((raw: string) => {
     const msg = JSON.parse(raw) as WsStatusMessage | WsBatchMessage
     // The gateway coalesces changes into a 250ms batch frame; older single
@@ -110,11 +124,13 @@ export function Dashboard() {
     const changes = 'type' in msg && msg.type === 'batch' ? msg.changes : [msg as WsStatusMessage]
     if (changes.length === 0) return
 
-    // Detect transitions against the cached previous status → fire toasts.
-    const prev = qc.getQueryData<Device[]>(['devices'])
+    // Detect transitions against the WS-owned last-status map → fire toasts.
+    const cached = qc.getQueryData<Device[]>(['devices'])
     for (const c of changes) {
-      const dev = prev?.find(d => d.id === c.device_id)
-      if (dev && dev.current_status !== c.status) {
+      const prevStatus = lastStatusRef.current.get(c.device_id)
+      lastStatusRef.current.set(c.device_id, c.status)
+      const dev = cached?.find(d => d.id === c.device_id)
+      if (dev && prevStatus !== undefined && prevStatus !== c.status) {
         if (c.status === 'offline') addToast('down', dev)
         else if (c.status === 'online') addToast('up', dev)
       }

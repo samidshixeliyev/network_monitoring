@@ -26,7 +26,10 @@ import urllib.request
 DEFAULT_BBOX = (44.5, 38.0, 50.6, 42.0)
 MIN_ZOOM = int(os.getenv("MIN_ZOOM", "0"))
 MAX_ZOOM = int(os.getenv("MAX_ZOOM", "9"))
-TILE_SERVER = os.getenv("TILE_SERVER", "https://basemaps.cartocdn.com/rastertiles/voyager")
+# voyager_nolabels: place names come from our own Azerbaijani label layer
+# (frontend/src/assets/az_places.json via scripts/download_place_labels.py),
+# not baked into the raster — the labelled styles are English-only.
+TILE_SERVER = os.getenv("TILE_SERVER", "https://basemaps.cartocdn.com/rastertiles/voyager_nolabels")
 USER_AGENT = os.getenv(
     "TILE_USER_AGENT",
     "network-monitoring-offline-tiles/1.0 (one-time bbox prefetch; contact: aliagha.huseynli@gmail.com)",

@@ -100,12 +100,18 @@ machine, then ship `backend/tiles/` to the air-gapped server.
 
 ```bash
 cd backend
-python scripts/download_osm_tiles.py            # → backend/tiles/osm/{z}/{x}/{y}.png
+MAX_ZOOM=11 python scripts/download_osm_tiles.py                    # AZ bbox z0–z11
+MAX_ZOOM=7 python scripts/download_osm_tiles.py --bbox=-180,-85,180,85  # world context z0–z7
+python scripts/download_place_labels.py         # Azerbaijani place names (OSM → frontend asset)
 # options:
-#   MAX_ZOOM=9 python scripts/download_osm_tiles.py
 #   python scripts/download_osm_tiles.py --bbox 44.5,38.0,50.6,42.0
 #   TILE_SERVER=https://your-tileserver python scripts/download_osm_tiles.py
 ```
+
+The basemap uses the **label-free** CARTO style: settlement names are rendered
+by the frontend itself (`PlaceLabels.tsx`) from `src/assets/az_places.json` —
+in Azerbaijani, zoom-dependent (cities → towns → suburbs/villages), fully
+offline. Regenerate the asset with `download_place_labels.py` when needed.
 
 The API auto-serves `backend/tiles/` at `/tiles/...` (see `app/main.py`), and the
 frontend loads `/tiles/osm/{z}/{x}/{y}.png` by default (no env needed). The

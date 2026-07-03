@@ -57,16 +57,22 @@ export function PlaceLabels() {
   useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
 
   // Dedicated pane between the overlay pane (400) and device markers (600) so
-  // labels sit above the basemap but never cover device pins or popups.
+  // labels sit above the basemap but never cover device pins or popups. The
+  // pane MUST exist before any Marker referencing it mounts (Leaflet throws
+  // otherwise, blanking the whole app), hence the ready gate.
+  const [paneReady, setPaneReady] = useState(false)
   useEffect(() => {
     if (!map.getPane(PANE)) {
       const pane = map.createPane(PANE)
       pane.style.zIndex = '450'
       pane.style.pointerEvents = 'none'
     }
+    setPaneReady(true)
   }, [map])
 
   const icons = useMemo(() => PLACES.map(placeIcon), [])
+
+  if (!paneReady) return null
 
   return (
     <>

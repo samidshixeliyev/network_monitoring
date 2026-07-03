@@ -6,7 +6,7 @@ export type UserRole = 'manager' | 'engineer' | 'operator' | 'viewer' | 'user' |
 
 // Permission names returned by the backend (authoritative gate lives there).
 export type Permission =
-  | 'view' | 'ssh' | 'ack' | 'mute' | 'edit_device' | 'edit_config' | 'manage_users'
+  | 'view' | 'snmp' | 'ssh' | 'ack' | 'mute' | 'edit_device' | 'edit_config' | 'manage_users'
 
 export interface Device {
   id: string

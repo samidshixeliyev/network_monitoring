@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_permission
 from app.core.config import settings
-from app.core.permissions import ACK, EDIT_CONFIG, EDIT_DEVICE, MUTE, SSH
+from app.core.permissions import ACK, EDIT_CONFIG, EDIT_DEVICE, MUTE, SNMP, SSH
 from app.db.session import get_db
 from app.models import Device, EventLog, User
 from app.models.device import DeviceStatus
@@ -214,11 +214,10 @@ async def ssh_check_device(
 async def snmp_check_device(
     device_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(SSH)),
+    current_user: User = Depends(require_permission(SNMP)),
 ) -> SnmpCheckResult:
     """Poll a device over SNMP right now (sysinfo/CPU/mem/interfaces) and
-    persist the facts + a history sample. Uses the same `ssh` (device access)
-    permission as ssh-check."""
+    persist the facts + a history sample. Requires the `snmp` permission."""
     device = await db.get(Device, device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -250,7 +249,7 @@ async def device_snmp_history(
     device_id: uuid.UUID,
     range: str = Query("24h"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission(SNMP)),
 ) -> list[SnmpHistoryPoint]:
     """Time-bucketed CPU/memory/traffic for a device (TimescaleDB). Powers the
     SNMP charts in the drawer. Same interval-literal note as /history."""

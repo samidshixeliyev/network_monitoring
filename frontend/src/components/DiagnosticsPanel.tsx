@@ -52,7 +52,11 @@ export function DiagnosticsPanel({ device }: { device: Device }) {
       {error && <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{error}</div>}
 
       {ping && (
-        <div style={{ marginTop: 8, background: '#0f172a', borderRadius: 8, padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0' }}>
+        <div style={{ marginTop: 8, background: '#0f172a', borderRadius: 8, padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0', position: 'relative' }}>
+          <button onClick={() => setPing(null)} aria-label="Bağla"
+            style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2 }}>
+            ×
+          </button>
           <div style={{ color: ping.alive ? '#4ade80' : '#f87171', fontWeight: 700, marginBottom: 4 }}>
             {ping.alive ? '● cavab verir' : '● cavab vermir'}
             <span style={{ color: '#94a3b8', fontWeight: 400 }}> — {device.ip_address}</span>
@@ -68,7 +72,11 @@ export function DiagnosticsPanel({ device }: { device: Device }) {
       )}
 
       {trace && (
-        <div style={{ marginTop: 8, background: '#0f172a', borderRadius: 8, padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0' }}>
+        <div style={{ marginTop: 8, background: '#0f172a', borderRadius: 8, padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0', position: 'relative' }}>
+          <button onClick={() => setTrace(null)} aria-label="Bağla"
+            style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2 }}>
+            ×
+          </button>
           <div style={{ color: '#94a3b8', marginBottom: 4 }}>traceroute → {device.ip_address}</div>
           {trace.length === 0 ? (
             <div style={{ color: '#f87171' }}>hop tapılmadı</div>

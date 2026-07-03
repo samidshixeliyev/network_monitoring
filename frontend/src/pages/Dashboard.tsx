@@ -12,7 +12,7 @@ import { HeartbeatBadge } from '../components/HeartbeatBadge'
 import { Toaster, type Toast } from '../components/Toaster'
 import { useAuth } from '../hooks/useAuth'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { playAlert } from '../lib/sound'
+import { playAlert, isSoundEnabled, setSoundEnabled } from '../lib/sound'
 import type { Device, DeviceCreate, WsStatusMessage, WsBatchMessage } from '../types'
 
 const WS_PROTO = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -49,6 +49,13 @@ export function Dashboard() {
   const [adding, setAdding] = useState(false)
   const [placing, setPlacing] = useState(false)        // map placement mode
   const [newCoords, setNewCoords] = useState<Coords | null>(null)
+  const [soundOn, setSoundOn] = useState(isSoundEnabled)
+
+  const toggleSound = () => {
+    const next = !soundOn
+    setSoundOn(next)
+    setSoundEnabled(next)   // persists + unlocks the AudioContext (this click is a user gesture)
+  }
 
   const startAdd = () => {
     if (view === 'map') { setPlacing(true) }
@@ -172,7 +179,11 @@ export function Dashboard() {
           NetMonitor
         </div>
         <nav style={{ display: 'flex', gap: 2 }}>
-          {[['Devices', '/'], ['Events', '/events']].map(([label, path]) => (
+          {([
+            ['Devices', '/'],
+            ['Events', '/events'],
+            ...(hasPermission('manage_users') || isManager ? [['⚙ Admin', '/admin']] : []),
+          ] as [string, string][]).map(([label, path]) => (
             <button key={label} onClick={() => navigate(path)}
               style={{
                 background: path === '/' ? 'rgba(255,255,255,0.12)' : 'transparent',
@@ -185,6 +196,19 @@ export function Dashboard() {
           ))}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={toggleSound}
+            title={soundOn ? 'Səs xəbərdarlıqları: aktiv' : 'Səs xəbərdarlıqları: söndürülüb'}
+            aria-label="Səs xəbərdarlıqları"
+            aria-pressed={soundOn}
+            style={{
+              background: 'transparent', border: '1px solid #334155',
+              color: soundOn ? '#93c5fd' : '#64748b', borderRadius: 6,
+              padding: '4px 9px', cursor: 'pointer', fontSize: 14, lineHeight: 1,
+              fontFamily: 'inherit',
+            }}>
+            {soundOn ? '🔔' : '🔕'}
+          </button>
           <HeartbeatBadge />
           <span style={{ fontSize: 12, color: '#475569' }}>{user?.email}</span>
           <span style={{ fontSize: 11, background: '#1e3a5f', color: '#93c5fd', borderRadius: 4, padding: '2px 7px', fontWeight: 600 }}>
@@ -308,7 +332,7 @@ export function Dashboard() {
 
       {/* ── Main area ──────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ flex: 1, overflow: 'hidden', transition: 'margin-right 0.2s', marginRight: drawerOpen ? 340 : 0 }}>
+        <div style={{ flex: 1, overflow: 'hidden', transition: 'margin-right 0.2s', marginRight: drawerOpen ? 360 : 0 }}>
 
           {/* Map view */}
           {view === 'map' && (

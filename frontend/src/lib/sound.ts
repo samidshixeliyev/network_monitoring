@@ -1,12 +1,63 @@
 // Tiny Web Audio alerts — no audio files needed (works fully offline).
-let ctx: AudioContext | null = null
+//
+// Browser autoplay policy: an AudioContext created without a user gesture starts
+// in the "suspended" state, and any oscillator scheduled on it is silent. Status
+// changes arrive over the WebSocket with no user interaction, so we must (a) share
+// a single context, and (b) resume it on the first real user gesture. After the
+// first click/keypress every later alert is audible.
 
-function audioCtx(): AudioContext {
+let ctx: AudioContext | null = null
+let gestureHooked = false
+
+// ── Sound on/off, persisted in localStorage (default ON) ───────────────────
+const LS_KEY = 'nm.soundEnabled'
+let soundEnabled = readEnabled()
+
+function readEnabled(): boolean {
+  try {
+    return localStorage.getItem(LS_KEY) !== '0'   // anything but explicit "0" → ON
+  } catch {
+    return true
+  }
+}
+
+export function isSoundEnabled(): boolean {
+  return soundEnabled
+}
+
+export function setSoundEnabled(on: boolean): void {
+  soundEnabled = on
+  try {
+    localStorage.setItem(LS_KEY, on ? '1' : '0')
+  } catch {
+    /* storage unavailable — keep in-memory state */
+  }
+  // A toggle IS a user gesture, so this is a good moment to unlock audio.
+  if (on) void ensureCtx()?.resume()
+}
+
+/** Lazily create the one shared AudioContext and wire up the gesture unlock. */
+function ensureCtx(): AudioContext | null {
   if (!ctx) {
-    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const Ctor = window.AudioContext
+      || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) return null
     ctx = new Ctor()
   }
+  hookGestureResume()
   return ctx
+}
+
+/** One-time document listener: resume the context on the first user gesture. */
+function hookGestureResume(): void {
+  if (gestureHooked) return
+  gestureHooked = true
+  const resume = () => {
+    if (ctx && ctx.state === 'suspended') void ctx.resume()
+    // Keep listening — some browsers re-suspend on tab blur, so re-arm cheaply.
+  }
+  document.addEventListener('pointerdown', resume)
+  document.addEventListener('keydown', resume)
 }
 
 function tone(a: AudioContext, freq: number, start: number, dur: number, gainV: number, type: OscillatorType = 'sine') {
@@ -35,10 +86,17 @@ const ALERT_SECONDS = 6
  *  - `critical` → loud, urgent repeating square-wave siren (important devices)
  *  - `down`     → descending two-tone alarm, repeated
  *  - `up`       → gentle ascending chime, repeated (recovery)
+ *
+ * No-ops when sound is toggled off. If the context is still suspended (user has
+ * not interacted yet) the notes are scheduled but silent — never throws.
  */
 export function playAlert(kind: AlertKind): void {
+  if (!soundEnabled) return
   try {
-    const a = audioCtx()
+    const a = ensureCtx()
+    if (!a) return
+    // Resume if we can; if it's still suspended (no gesture yet) we schedule
+    // anyway so nothing throws — the first post-gesture alert will be audible.
     if (a.state === 'suspended') void a.resume()
 
     if (kind === 'critical') {

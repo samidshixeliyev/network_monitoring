@@ -34,6 +34,8 @@ LAB = [
 # lab/device/Dockerfile + DEVICE_ROOT_PASSWORD in lab/docker-compose.yml).
 SSH_USER = "root"
 SSH_PASS = "Lab_Dev1ce!"
+# All lab device containers run snmpd with this community (lab/device/Dockerfile).
+SNMP_COMMUNITY = "public"
 
 
 async def seed() -> None:
@@ -60,6 +62,9 @@ async def seed() -> None:
                 exists.ssh_username = SSH_USER
                 exists.ssh_password = SSH_PASS
                 exists.ssh_port = 22
+                exists.snmp_enabled = True
+                exists.snmp_community = SNMP_COMMUNITY
+                exists.snmp_port = 161
                 continue
             session.add(
                 Device(
@@ -68,6 +73,7 @@ async def seed() -> None:
                     latitude=lat, longitude=lon, created_by=manager.id,
                     ssh_enabled=True, ssh_username=SSH_USER, ssh_password=SSH_PASS,
                     ssh_port=22,
+                    snmp_enabled=True, snmp_community=SNMP_COMMUNITY, snmp_port=161,
                 )
             )
             created += 1

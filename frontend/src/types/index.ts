@@ -41,6 +41,13 @@ export interface Device {
   ssh_uptime: string | null
   ssh_facts: string | null
   ssh_collected_at: string | null
+  // SNMP telemetry (read-only; community string never returned)
+  snmp_enabled: boolean
+  snmp_port: number
+  snmp_version: string
+  snmp_status: string
+  snmp_facts: string | null
+  snmp_collected_at: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -57,6 +64,35 @@ export interface SshCheckResult {
   hostname?: string | null
   uptime?: string | null
   facts?: SshFacts | null
+}
+
+export interface SnmpInterface {
+  index: number
+  name: string
+  oper: 'up' | 'down'
+  speed_mbps: number | null
+  in_bps: number | null
+  out_bps: number | null
+}
+export interface SnmpFacts {
+  sys_name?: string | null
+  sys_descr?: string | null
+  uptime?: string | null
+  cpu_percent?: number | null
+  mem_percent?: number | null
+  interfaces?: SnmpInterface[]
+}
+export interface SnmpCheckResult {
+  status: string
+  detail?: string | null
+  facts?: SnmpFacts | null
+}
+export interface SnmpHistoryPoint {
+  ts: string
+  cpu_percent: number | null
+  mem_percent: number | null
+  in_bps: number | null
+  out_bps: number | null
 }
 
 export interface DeviceCreate {
@@ -78,6 +114,9 @@ export interface DeviceCreate {
   check_tcp_port?: number | null
   check_http_url?: string | null
   check_http_expect?: number | null
+  snmp_enabled?: boolean
+  snmp_port?: number
+  snmp_community?: string | null
 }
 
 export type DeviceUpdate = Partial<DeviceCreate>

@@ -48,6 +48,9 @@ export function DeviceForm({ device, initialCoords, allDevices = [], onSave, onC
     ssh_username:  device?.ssh_username  ?? '',
     ssh_password:  '',
     ssh_port:      String(device?.ssh_port ?? 22),
+    snmp_enabled:  device?.snmp_enabled ?? false,
+    snmp_community: '',
+    snmp_port:     String(device?.snmp_port ?? 161),
     parent_id:        device?.parent_id ?? '',
     check_tcp_port:   device?.check_tcp_port != null ? String(device.check_tcp_port) : '',
     check_http_url:   device?.check_http_url ?? '',
@@ -80,6 +83,10 @@ export function DeviceForm({ device, initialCoords, allDevices = [], onSave, onC
         // Only send the password when the user typed one (keeps the stored
         // password on edit if left blank).
         ...(form.ssh_password ? { ssh_password: form.ssh_password } : {}),
+        snmp_enabled:  form.snmp_enabled,
+        snmp_port:     form.snmp_port === '' ? 161 : Number(form.snmp_port),
+        // Like ssh_password: only send when typed (blank keeps the stored one).
+        ...(form.snmp_community ? { snmp_community: form.snmp_community } : {}),
         parent_id:        form.parent_id || null,
         check_tcp_port:   form.check_tcp_port === '' ? null : Number(form.check_tcp_port),
         check_http_url:   form.check_http_url || null,
@@ -212,6 +219,32 @@ export function DeviceForm({ device, initialCoords, allDevices = [], onSave, onC
                     <input style={{ ...field, fontFamily: 'monospace' }} type="number" min={1} max={65535}
                       value={form.ssh_port}
                       onChange={(e) => set('ssh_port', e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── SNMP telemetry ─────────────────────────────────────────── */}
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#1e40af' }}>
+                <input type="checkbox" checked={form.snmp_enabled}
+                  onChange={(e) => set('snmp_enabled', e.target.checked)} />
+                SNMP ilə məlumat topla (CPU / RAM / interfeys trafiki)
+              </label>
+              {form.snmp_enabled && (
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 12, marginTop: 10 }}>
+                  <div>
+                    <label style={label}>Community (v2c)</label>
+                    <input style={field} type="password"
+                      value={form.snmp_community}
+                      placeholder={device?.snmp_enabled ? '•••••• (dəyişmə)' : 'public'}
+                      onChange={(e) => set('snmp_community', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={label}>Port</label>
+                    <input style={{ ...field, fontFamily: 'monospace' }} type="number" min={1} max={65535}
+                      value={form.snmp_port}
+                      onChange={(e) => set('snmp_port', e.target.value)} />
                   </div>
                 </div>
               )}

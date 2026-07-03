@@ -5,11 +5,13 @@
 FROM alpine:3.20
 
 # openssh = sshd; iproute2 = real `ip` so `ip -o -4 addr show` works for the
-# interface facts the collector parses.
-RUN apk add --no-cache openssh iproute2 \
+# interface facts the collector parses; net-snmp = snmpd so the SNMP collector
+# can poll sysinfo/CPU/mem/interface counters like on real gear.
+RUN apk add --no-cache openssh iproute2 net-snmp \
     && ssh-keygen -A \
     && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && printf 'rocommunity public\nsysLocation Azerbaijan lab\nsysContact netmon\n' > /etc/snmp/snmpd.conf \
     && printf '\n  *** LAB NETWORK DEVICE (Alpine stand-in) ***\n  Monitored by network_monitoring. Not a real NOS.\n  Test:  port down | port up | port flap 30   (toggle eth0 to drive alerts)\n\n' > /etc/motd
 
 COPY entrypoint.sh /entrypoint.sh

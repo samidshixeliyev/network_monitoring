@@ -102,6 +102,26 @@ class Device(Base):
     ssh_facts: Mapped[str | None] = mapped_column(UnicodeText)
     ssh_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ── SNMP telemetry (optional, per-device) ───────────────────────────────
+    # When snmp_enabled, the collector polls the device over SNMP v2c for
+    # system info, CPU/memory and per-interface traffic counters. The community
+    # string is write-only through the API (like ssh_password).
+    snmp_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    snmp_port: Mapped[int] = mapped_column(Integer, default=161, server_default="161", nullable=False)
+    snmp_community: Mapped[str | None] = mapped_column(Unicode(100))
+    snmp_version: Mapped[str] = mapped_column(
+        String(5), default="2c", server_default="2c", nullable=False
+    )
+    # Last collection result: unknown | ok | timeout | error
+    snmp_status: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown", nullable=False
+    )
+    # JSON blob: sys_name/sys_descr/uptime/cpu_percent/mem_percent/interfaces.
+    snmp_facts: Mapped[str | None] = mapped_column(UnicodeText)
+    snmp_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # ── Topology / dependency ───────────────────────────────────────────────
     # When the parent is down, this device's alarm is suppressed and shown as
     # "unreachable (parent X down)" — avoids alarm storms during an upstream outage.

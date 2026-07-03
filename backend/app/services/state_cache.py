@@ -40,7 +40,7 @@ HEARTBEAT_KEY = "collector:heartbeat"
 VERSION_KEY = "devices:schema_version"
 # Bump whenever the cached device shape (DeviceRead) changes, so a stale cache
 # from before a schema migration is treated as cold and re-warmed from the DB.
-CACHE_VERSION = "2"
+CACHE_VERSION = "3"  # 3: + snmp_* fields
 
 _redis: redis.Redis | None = None
 

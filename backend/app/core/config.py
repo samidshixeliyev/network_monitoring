@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     SSH_POLL_INTERVAL_SECONDS: int = 60
     SSH_CONNECT_TIMEOUT_SECONDS: int = 8
 
+    # ── SNMP telemetry collector ────────────────────────────────────────────
+    # When enabled, a background loop polls snmp_enabled devices (v2c) for
+    # system info, CPU/memory and interface traffic counters, and records the
+    # metrics into the snmp_history hypertable.
+    SNMP_ENABLED: bool = False
+    SNMP_POLL_INTERVAL_SECONDS: int = 30
+    SNMP_TIMEOUT_SECONDS: int = 2
+    SNMP_RETRIES: int = 1
+
     # ── Alerting / escalation (email via SMTP) ──────────────────────────────
     ALERT_ENABLED: bool = False
     # A device must stay down at least this long before an alert is sent.

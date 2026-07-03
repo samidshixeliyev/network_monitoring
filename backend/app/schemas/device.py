@@ -39,6 +39,10 @@ class DeviceBase(BaseModel):
     ssh_enabled: bool = False
     ssh_port: Annotated[int, Field(ge=1, le=65535)] = 22
     ssh_username: str | None = None
+    # SNMP telemetry config (the community string is write-only, like ssh_password).
+    snmp_enabled: bool = False
+    snmp_port: Annotated[int, Field(ge=1, le=65535)] = 161
+    snmp_version: Literal["2c"] = "2c"
     # Topology: parent device (alarms suppressed when the parent is down).
     parent_id: uuid.UUID | None = None
     # Multi-condition checks (beyond ICMP): optional TCP port / HTTP URL.
@@ -54,6 +58,7 @@ class DeviceBase(BaseModel):
 
 class DeviceCreate(DeviceBase):
     ssh_password: str | None = None
+    snmp_community: str | None = None
 
 
 class DeviceUpdate(BaseModel):
@@ -71,6 +76,9 @@ class DeviceUpdate(BaseModel):
     ssh_port: Annotated[int, Field(ge=1, le=65535)] | None = None
     ssh_username: str | None = None
     ssh_password: str | None = None
+    snmp_enabled: bool | None = None
+    snmp_port: Annotated[int, Field(ge=1, le=65535)] | None = None
+    snmp_community: str | None = None
     parent_id: uuid.UUID | None = None
     check_tcp_port: Annotated[int, Field(ge=1, le=65535)] | None = None
     check_http_url: str | None = None
@@ -107,6 +115,10 @@ class DeviceRead(DeviceBase):
     ssh_uptime: str | None
     ssh_facts: str | None
     ssh_collected_at: datetime | None
+    # SNMP telemetry (read-only; community string is never returned)
+    snmp_status: str
+    snmp_facts: str | None
+    snmp_collected_at: datetime | None
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
@@ -124,4 +136,11 @@ class SshCheckResult(BaseModel):
     detail: str | None = None
     hostname: str | None = None
     uptime: str | None = None
+    facts: dict | None = None
+
+
+class SnmpCheckResult(BaseModel):
+    """On-demand SNMP collection result returned by POST /{id}/snmp-check."""
+    status: str
+    detail: str | None = None
     facts: dict | None = None

@@ -20,11 +20,13 @@ from app.schemas.device import (
     DeviceRead,
     DeviceSimulate,
     DeviceUpdate,
+    SnmpCheckResult,
     SshCheckResult,
     serialize_device,
 )
 from app.services import state_cache
 from app.services.audit import add_audit
+from app.services.snmp_collector import collect_device as snmp_collect_device
 from app.services.ssh_collector import collect_device
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -204,6 +206,82 @@ async def ssh_check_device(
         raise HTTPException(status_code=400, detail="SSH is not configured for this device")
     # collect_device persists the new ssh_* fields AND refreshes the Redis snapshot.
     return SshCheckResult(**result)
+
+
+@router.post("/{device_id}/snmp-check", response_model=SnmpCheckResult)
+async def snmp_check_device(
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(SSH)),
+) -> SnmpCheckResult:
+    """Poll a device over SNMP right now (sysinfo/CPU/mem/interfaces) and
+    persist the facts + a history sample. Uses the same `ssh` (device access)
+    permission as ssh-check."""
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not device.snmp_enabled:
+        raise HTTPException(status_code=400, detail="SNMP is not enabled for this device")
+
+    add_audit(
+        db, current_user, "device.snmp_check",
+        target_type="device", target_id=str(device_id),
+    )
+    await db.commit()
+
+    result = await snmp_collect_device(device_id)
+    if result is None:
+        raise HTTPException(status_code=400, detail="SNMP is not configured for this device")
+    return SnmpCheckResult(**result)
+
+
+class SnmpHistoryPoint(BaseModel):
+    ts: datetime
+    cpu_percent: float | None
+    mem_percent: float | None
+    in_bps: float | None
+    out_bps: float | None
+
+
+@router.get("/{device_id}/snmp/history", response_model=list[SnmpHistoryPoint])
+async def device_snmp_history(
+    device_id: uuid.UUID,
+    range: str = Query("24h"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[SnmpHistoryPoint]:
+    """Time-bucketed CPU/memory/traffic for a device (TimescaleDB). Powers the
+    SNMP charts in the drawer. Same interval-literal note as /history."""
+    window, bucket = _HISTORY_RANGES.get(range, _HISTORY_RANGES["24h"])
+    stmt = text(
+        f"""
+        SELECT time_bucket(INTERVAL '{bucket}', ts) AS bucket,
+               avg(cpu_percent) AS cpu,
+               avg(mem_percent) AS mem,
+               avg(in_bps)      AS in_bps,
+               avg(out_bps)     AS out_bps
+        FROM snmp_history
+        WHERE device_id = :did AND ts >= now() - INTERVAL '{window}'
+        GROUP BY bucket
+        ORDER BY bucket
+        """
+    )
+    try:
+        rows = (await db.execute(stmt, {"did": device_id})).all()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("snmp history query failed for %s: %s", device_id, exc)
+        return []
+
+    return [
+        SnmpHistoryPoint(
+            ts=bucket_ts,
+            cpu_percent=round(float(cpu), 1) if cpu is not None else None,
+            mem_percent=round(float(mem), 1) if mem is not None else None,
+            in_bps=round(float(in_bps)) if in_bps is not None else None,
+            out_bps=round(float(out_bps)) if out_bps is not None else None,
+        )
+        for bucket_ts, cpu, mem, in_bps, out_bps in rows
+    ]
 
 
 class MuteRequest(BaseModel):

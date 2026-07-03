@@ -26,10 +26,15 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(redis_status_subscriber())]
     if settings.EMBEDDED_COLLECTOR:
         from app.services.ping_scheduler import ping_loop
+        from app.services.snmp_collector import snmp_poll_loop
         from app.services.ssh_collector import ssh_poll_loop
 
         logger.info("EMBEDDED_COLLECTOR=true — running probe loops in the API process")
-        tasks += [asyncio.create_task(ping_loop()), asyncio.create_task(ssh_poll_loop())]
+        tasks += [
+            asyncio.create_task(ping_loop()),
+            asyncio.create_task(ssh_poll_loop()),
+            asyncio.create_task(snmp_poll_loop()),
+        ]
 
     yield
     for task in tasks:

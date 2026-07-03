@@ -5,6 +5,7 @@ import { fetchEvents } from '../api/events'
 import { DeviceForm } from './DeviceForm'
 import { WebShell } from './WebShell'
 import { LatencyChart } from './LatencyChart'
+import { SnmpPanel } from './SnmpPanel'
 import { StatusBadge } from './StatusBadge'
 import { useAuth } from '../hooks/useAuth'
 import type { Device, DeviceUpdate, SshFacts } from '../types'
@@ -293,6 +294,9 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
               )}
             </div>
           )}
+
+          {/* SNMP telemetry */}
+          {device.snmp_enabled && <SnmpPanel device={device} canPoll={canSsh} />}
 
           {/* Manual status simulation (testing) */}
           {canEditConfig && (

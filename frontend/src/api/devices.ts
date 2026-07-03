@@ -1,5 +1,8 @@
 import { apiClient } from './client'
-import type { Device, DeviceCreate, DeviceUpdate, HistoryPoint, SshCheckResult } from '../types'
+import type {
+  Device, DeviceCreate, DeviceUpdate, HistoryPoint,
+  SnmpCheckResult, SnmpHistoryPoint, SshCheckResult,
+} from '../types'
 
 export const devicesApi = {
   list: async (): Promise<Device[]> => {
@@ -23,6 +26,16 @@ export const devicesApi = {
   },
   sshCheck: async (id: string): Promise<SshCheckResult> => {
     const { data } = await apiClient.post<SshCheckResult>(`/devices/${id}/ssh-check`, {})
+    return data
+  },
+  snmpCheck: async (id: string): Promise<SnmpCheckResult> => {
+    const { data } = await apiClient.post<SnmpCheckResult>(`/devices/${id}/snmp-check`, {})
+    return data
+  },
+  snmpHistory: async (id: string, range = '24h'): Promise<SnmpHistoryPoint[]> => {
+    const { data } = await apiClient.get<SnmpHistoryPoint[]>(`/devices/${id}/snmp/history`, {
+      params: { range },
+    })
     return data
   },
   history: async (id: string, range = '24h'): Promise<HistoryPoint[]> => {

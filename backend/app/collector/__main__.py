@@ -21,15 +21,17 @@ async def main() -> None:
     from app.services.alerts import alert_loop
     from app.services.cache_warm import warm_cache_if_cold
     from app.services.ping_scheduler import ping_loop
+    from app.services.snmp_collector import snmp_poll_loop
     from app.services.ssh_collector import ssh_poll_loop
     from app.services.state_cache import close_redis
 
-    logger.info("collector process starting (ICMP + SSH probing + alerts)")
+    logger.info("collector process starting (ICMP + SSH + SNMP probing + alerts)")
     await warm_cache_if_cold()
 
     tasks = [
         asyncio.create_task(ping_loop()),
         asyncio.create_task(ssh_poll_loop()),
+        asyncio.create_task(snmp_poll_loop()),
         asyncio.create_task(alert_loop()),
     ]
     try:

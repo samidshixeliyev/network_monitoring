@@ -8,6 +8,7 @@ from app.models.device import Device, DeviceStatus
 from app.models.event_log import EventLog, EventType
 from app.models.audit_log import AuditLog
 from app.models.ping_history import PingHistory
+from app.models.snmp_history import SnmpHistory
 
 __all__ = [
     "Base",
@@ -21,4 +22,5 @@ __all__ = [
     "EventType",
     "AuditLog",
     "PingHistory",
+    "SnmpHistory",
 ]

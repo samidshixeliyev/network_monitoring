@@ -194,6 +194,9 @@ services:
       # SSH telemetry collector (logs into the device containers over SSH).
       SSH_ENABLED: "true"
       SSH_POLL_INTERVAL_SECONDS: "30"
+      # SNMP telemetry collector (polls the device containers' snmpd).
+      SNMP_ENABLED: "true"
+      SNMP_POLL_INTERVAL_SECONDS: "30"
     networks: [netlab]
     restart: unless-stopped
     cap_add:

@@ -60,6 +60,22 @@ function hookGestureResume(): void {
   document.addEventListener('keydown', resume)
 }
 
+// Master output: a compressor lets us push per-voice gains close to 1.0 for a
+// LOUD alarm without hard digital clipping.
+let master: DynamicsCompressorNode | null = null
+function masterOut(a: AudioContext): AudioNode {
+  if (!master) {
+    master = a.createDynamicsCompressor()
+    master.threshold.value = -12
+    master.knee.value = 6
+    master.ratio.value = 8
+    master.attack.value = 0.003
+    master.release.value = 0.2
+    master.connect(a.destination)
+  }
+  return master
+}
+
 function tone(a: AudioContext, freq: number, start: number, dur: number, gainV: number, type: OscillatorType = 'sine') {
   const t0 = a.currentTime
   const osc = a.createOscillator()
@@ -70,9 +86,48 @@ function tone(a: AudioContext, freq: number, start: number, dur: number, gainV: 
   gain.gain.linearRampToValueAtTime(gainV, t0 + start + 0.02)
   gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur)
   osc.connect(gain)
-  gain.connect(a.destination)
+  gain.connect(masterOut(a))
   osc.start(t0 + start)
   osc.stop(t0 + start + dur + 0.02)
+}
+
+/**
+ * Air-raid style siren: one continuous voice whose frequency WAILS up and down
+ * (fLow→fHigh→fLow per cycle). Two slightly detuned oscillators thicken the
+ * sound so it cuts through like a real civil-defence siren.
+ */
+function siren(
+  a: AudioContext,
+  fLow: number,
+  fHigh: number,
+  cycles: number,
+  cycleDur: number,
+  gainV: number,
+  type: OscillatorType = 'sawtooth',
+) {
+  const t0 = a.currentTime
+  const total = cycles * cycleDur
+  const out = a.createGain()
+  out.gain.setValueAtTime(0.0001, t0)
+  out.gain.linearRampToValueAtTime(gainV, t0 + 0.08)
+  out.gain.setValueAtTime(gainV, t0 + total - 0.4)
+  out.gain.exponentialRampToValueAtTime(0.0001, t0 + total)
+  out.connect(masterOut(a))
+
+  for (const detune of [0, 8]) {
+    const osc = a.createOscillator()
+    osc.type = type
+    osc.detune.value = detune
+    osc.frequency.setValueAtTime(fLow, t0)
+    for (let i = 0; i < cycles; i++) {
+      const c = t0 + i * cycleDur
+      osc.frequency.linearRampToValueAtTime(fHigh, c + cycleDur * 0.5)
+      osc.frequency.linearRampToValueAtTime(fLow, c + cycleDur)
+    }
+    osc.connect(out)
+    osc.start(t0)
+    osc.stop(t0 + total + 0.05)
+  }
 }
 
 /** Short confirmation beep — used by the header 🔔 toggle so the user can
@@ -91,15 +146,13 @@ export function playTestBeep(): void {
 
 export type AlertKind = 'down' | 'up' | 'critical'
 
-// Alerts repeat to fill this many seconds so a down/up event is clearly audible
-// (5–7s window requested). Kept as a constant so all kinds share the length.
-const ALERT_SECONDS = 6
-
 /**
- * Play a status alert — each lasts ~6s (repeating pattern) so it is hard to miss.
- *  - `critical` → loud, urgent repeating square-wave siren (important devices)
- *  - `down`     → descending two-tone alarm, repeated
- *  - `up`       → gentle ascending chime, repeated (recovery)
+ * Play a status alert — LOUD, air-raid style (per user request: "come as if
+ * the city is being bombed").
+ *  - `critical` → ~10s civil-defence WAIL siren (sawtooth sweep 500→1100 Hz)
+ *                 with a pounding low klaxon underneath — impossible to miss
+ *  - `down`     → ~8s two-tone klaxon (à la submarine dive horn), loud
+ *  - `up`       → ascending recovery chime, clearly audible but friendly
  *
  * No-ops when sound is toggled off. If the context is still suspended (user has
  * not interacted yet) the notes are scheduled but silent — never throws.
@@ -114,27 +167,28 @@ export function playAlert(kind: AlertKind): void {
     if (a.state === 'suspended') void a.resume()
 
     if (kind === 'critical') {
-      // Fast alternating high tones, louder — repeated for the full window.
-      const step = 0.16
-      const n = Math.floor(ALERT_SECONDS / step)
-      for (let i = 0; i < n; i++) {
-        tone(a, i % 2 ? 784 : 1046, i * step, 0.14, 0.34, 'square')
+      // Air-raid wail: 5 sweep cycles × 2s = 10s, thick sawtooth, near-full gain.
+      siren(a, 500, 1100, 5, 2.0, 0.9, 'sawtooth')
+      // Pounding low klaxon bursts underneath for physical weight.
+      for (let i = 0; i < 20; i++) {
+        tone(a, 220, i * 0.5, 0.22, 0.5, 'square')
       }
     } else if (kind === 'down') {
-      // Descending high→low two-tone, one cycle every 0.6s, repeated ~10x.
-      const cycle = 0.6
-      const n = Math.floor(ALERT_SECONDS / cycle)
-      for (let i = 0; i < n; i++) {
-        tone(a, 880, i * cycle, 0.20, 0.20)
-        tone(a, 440, i * cycle + 0.28, 0.28, 0.20)
+      // Two-tone klaxon (AHOO-GA style): alternating long loud blasts, ~8s.
+      const cycle = 0.8
+      for (let i = 0; i < 10; i++) {
+        tone(a, 650, i * cycle, 0.38, 0.75, 'square')
+        tone(a, 420, i * cycle + 0.4, 0.38, 0.75, 'square')
       }
+      // Short wail tail to make it unmistakably an alarm.
+      siren(a, 400, 800, 2, 1.2, 0.55)
     } else {
-      // Recovery: pleasant ascending low→high chime, repeated, softer.
+      // Recovery: pleasant ascending chime, louder than before but not scary.
       const cycle = 0.7
-      const n = Math.floor(ALERT_SECONDS / cycle)
-      for (let i = 0; i < n; i++) {
-        tone(a, 523, i * cycle, 0.18, 0.12)
-        tone(a, 784, i * cycle + 0.20, 0.24, 0.12)
+      for (let i = 0; i < 8; i++) {
+        tone(a, 523, i * cycle, 0.18, 0.3)
+        tone(a, 784, i * cycle + 0.2, 0.24, 0.3)
+        tone(a, 1046, i * cycle + 0.42, 0.2, 0.22)
       }
     }
   } catch {

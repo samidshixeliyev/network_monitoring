@@ -113,6 +113,7 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
   const allDev = qc.getQueryData<Device[]>(['devices']) ?? []
   const parent = device.parent_id ? allDev.find(d => d.id === device.parent_id) ?? null : null
   const parentDown = parent?.current_status === 'offline'
+  const children = allDev.filter(d => d.parent_id === device.id)
   const underMaint = device.maintenance_until != null && new Date(device.maintenance_until) > new Date()
 
   const meta: [string, string | null | undefined][] = [
@@ -274,6 +275,35 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
                   </div>
                 ))}
               </div>
+
+              {/* Dependent (child) devices — their alarms are suppressed while
+                  this device is down. */}
+              {children.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={SECTION_TITLE}>Asılı cihazlar ({children.length})</div>
+                  <div style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 13px', border: '1px solid #f1f5f9' }}>
+                    {children.map(c => (
+                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0' }}>
+                        <span style={{
+                          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                          background: STATUS_STRIPE[c.current_status] ?? '#94a3b8',
+                        }} />
+                        <span style={{ color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.vendor_name}
+                        </span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8', marginLeft: 'auto', flexShrink: 0 }}>
+                          {c.ip_address}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {device.current_status === 'offline' && (
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: '#94a3b8' }}>
+                      Bu cihaz down olduğu üçün asılı cihazların alarmları susdurulur.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Simulate (testing) */}
               {canEditConfig && (

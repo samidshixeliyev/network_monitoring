@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import {
   MapContainer,
   GeoJSON,
   Marker,
+  Polyline,
   Tooltip,
   TileLayer,
   useMap,
@@ -132,6 +133,24 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
     [devices],
   )
 
+  // Topology links: a line from each device to its parent (both must be placed
+  // on the map). Toggleable; the choice persists across sessions.
+  const [showLinks, setShowLinks] = useState(
+    () => localStorage.getItem('nm.topoLinks') !== 'off',
+  )
+  const toggleLinks = () => {
+    setShowLinks(v => {
+      localStorage.setItem('nm.topoLinks', v ? 'off' : 'on')
+      return !v
+    })
+  }
+  const links = useMemo(() => {
+    const byId = new Map(placed.map(d => [d.id, d]))
+    return placed
+      .filter(d => d.parent_id && byId.has(d.parent_id))
+      .map(d => ({ child: d, parent: byId.get(d.parent_id!)! }))
+  }, [placed])
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <style>{`
@@ -183,6 +202,29 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
 
         {placing && onMapClick && <ClickToPlace onClick={onMapClick} />}
 
+        {/* Topology: child → parent dependency lines (under the markers).
+            Red dashed when either end is down, yellow when unknown. */}
+        {showLinks && links.map(({ child, parent }) => {
+          const down = child.current_status === 'offline' || parent.current_status === 'offline'
+          const unknown = child.current_status === 'unknown' || parent.current_status === 'unknown'
+          const color = down ? '#ef4444' : unknown ? '#eab308' : '#64748b'
+          return (
+            <Polyline
+              key={`link-${child.id}`}
+              positions={[
+                [parent.latitude as number, parent.longitude as number],
+                [child.latitude as number, child.longitude as number],
+              ]}
+              pathOptions={{
+                color,
+                weight: down ? 2.5 : 1.8,
+                opacity: down ? 0.9 : 0.55,
+                dashArray: down ? '6 6' : undefined,
+              }}
+            />
+          )
+        })}
+
         {/* Cluster markers so the map stays smooth at 500+ devices: nearby pins
             collapse into a count bubble until you zoom in. */}
         <MarkerClusterGroup chunkedLoading maxClusterRadius={50} disableClusteringAtZoom={11}>
@@ -196,6 +238,25 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
           ))}
         </MarkerClusterGroup>
       </MapContainer>
+
+      {/* Topology-lines toggle (only when at least one dependency exists). */}
+      {links.length > 0 && (
+        <button
+          onClick={toggleLinks}
+          title={showLinks ? 'Topologiya xətlərini gizlət' : 'Topologiya xətlərini göstər'}
+          style={{
+            position: 'absolute', top: 12, right: 12, zIndex: 1000,
+            background: showLinks ? '#1e40af' : '#fff',
+            color: showLinks ? '#fff' : '#475569',
+            border: '1px solid ' + (showLinks ? '#1e40af' : '#cbd5e1'),
+            borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+            fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          }}
+        >
+          🔗 Əlaqələr
+        </button>
+      )}
 
       {placing && (
         <div

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   ReactFlow,
   Background,
@@ -6,6 +6,8 @@ import {
   MiniMap,
   useNodesState,
   BackgroundVariant,
+  MarkerType,
+  type Edge,
   type NodeChange,
 } from '@xyflow/react'
 import { DeviceNode, type DeviceNodeType } from './DeviceNode'
@@ -65,6 +67,26 @@ export function NetworkGraph({ devices, selectedId, onSelect }: Props) {
     })
   }, [devices, selectedId, setNodes])
 
+  // Topology edges from parent_id (parent → child). An edge to a device that
+  // is filtered out of the current list is skipped rather than left dangling.
+  const edges = useMemo<Edge[]>(() => {
+    const ids = new Set(devices.map(d => d.id))
+    return devices
+      .filter(d => d.parent_id && ids.has(d.parent_id))
+      .map(d => {
+        const down = d.current_status === 'offline'
+        const color = down ? '#ef4444' : '#94a3b8'
+        return {
+          id: `link-${d.id}`,
+          source: d.parent_id!,
+          target: d.id,
+          animated: down,
+          style: { stroke: color, strokeWidth: down ? 2 : 1.5, strokeDasharray: down ? '6 6' : undefined },
+          markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
+        }
+      })
+  }, [devices])
+
   const handleChange = useCallback(
     (changes: NodeChange<DeviceNodeType>[]) => {
       onNodesChange(changes)
@@ -79,7 +101,7 @@ export function NetworkGraph({ devices, selectedId, onSelect }: Props) {
   return (
     <ReactFlow
       nodes={nodes}
-      edges={[]}
+      edges={edges}
       onNodesChange={handleChange}
       onNodeClick={(_, node) => onSelect(node.data.device)}
       nodeTypes={nodeTypes}

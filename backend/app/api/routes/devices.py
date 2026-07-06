@@ -76,12 +76,42 @@ async def devices_snapshot(_: User = Depends(get_current_user)) -> list[dict]:
     ]
 
 
+async def _validate_parent(
+    db: AsyncSession, device_id: uuid.UUID | None, parent_id: uuid.UUID | None
+) -> None:
+    """Reject a parent that doesn't exist, is the device itself, or whose
+    ancestor chain leads back to this device (a dependency cycle would make
+    parent-down alarm suppression eat both devices' alarms forever)."""
+    if parent_id is None:
+        return
+    if device_id is not None and parent_id == device_id:
+        raise HTTPException(status_code=422, detail="A device cannot be its own parent")
+    seen: set[uuid.UUID] = set()
+    current: uuid.UUID | None = parent_id
+    while current is not None:
+        if device_id is not None and current == device_id:
+            raise HTTPException(
+                status_code=422,
+                detail="This parent would create a dependency cycle",
+            )
+        if current in seen:  # pre-existing cycle among other devices — stop walking
+            break
+        seen.add(current)
+        ancestor = await db.get(Device, current)
+        if ancestor is None:
+            if current == parent_id:
+                raise HTTPException(status_code=422, detail="Parent device not found")
+            break
+        current = ancestor.parent_id
+
+
 @router.post("", response_model=DeviceRead, status_code=status.HTTP_201_CREATED)
 async def create_device(
     body: DeviceCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission(EDIT_DEVICE)),
 ) -> Device:
+    await _validate_parent(db, None, body.parent_id)
     device = Device(**body.model_dump(), created_by=current_user.id)
     db.add(device)
     add_audit(
@@ -121,6 +151,8 @@ async def update_device(
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
     changes = body.model_dump(exclude_unset=True)
+    if "parent_id" in changes:
+        await _validate_parent(db, device_id, changes["parent_id"])
     for field, value in changes.items():
         setattr(device, field, value)
     add_audit(

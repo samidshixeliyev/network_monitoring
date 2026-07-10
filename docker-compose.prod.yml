@@ -1,0 +1,147 @@
+# Production stack. Differences from the dev docker-compose.yml:
+#   * no --reload, no source-code volume mounts (immutable images)
+#   * probing runs in a DEDICATED collector process (EMBEDDED_COLLECTOR=false);
+#     the API stays a stateless gateway you can scale
+#   * frontend is a static nginx build proxying /api /ws /tiles same-origin
+#   * ENVIRONMENT=production → the API refuses to start with a default SECRET_KEY
+#
+# Required .env at the repo root:
+#   POSTGRES_PASSWORD=<strong password>
+#   SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
+#   DEFAULT_MANAGER_PASSWORD=<first-login password>
+#   (+ any ALERT_* / SYSLOG_* / DISCOVERY_* settings)
+#
+# Run:  docker compose -f docker-compose.prod.yml up -d --build
+
+x-backend-env: &backend-env
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-network}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+  ENVIRONMENT: production
+  EMBEDDED_COLLECTOR: "false"
+  DEFAULT_MANAGER_EMAIL: ${DEFAULT_MANAGER_EMAIL:-admin@example.com}
+  DEFAULT_MANAGER_PASSWORD: ${DEFAULT_MANAGER_PASSWORD:-changeme}
+  # Alerting / syslog / discovery — set in .env as needed.
+  ALERT_ENABLED: ${ALERT_ENABLED:-false}
+  ALERT_CRITICAL_ONLY: ${ALERT_CRITICAL_ONLY:-true}
+  ALERT_AFTER_SECONDS: ${ALERT_AFTER_SECONDS:-120}
+  ALERT_LOSS_PCT: ${ALERT_LOSS_PCT:-0}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-25}
+  SMTP_FROM: ${SMTP_FROM:-netmon@example.com}
+  ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+  ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+  ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
+  ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
+  ALERT_SMS_COMMAND: ${ALERT_SMS_COMMAND:-}
+  ALERT_SMS_TO: ${ALERT_SMS_TO:-}
+  SYSLOG_ENABLED: ${SYSLOG_ENABLED:-false}
+  SYSLOG_ALERT_MAX_SEVERITY: ${SYSLOG_ALERT_MAX_SEVERITY:-2}
+  DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-false}
+  DISCOVERY_SUBNETS: ${DISCOVERY_SUBNETS:-}
+  SNMP_ENABLED: ${SNMP_ENABLED:-false}
+  SSH_ENABLED: ${SSH_ENABLED:-false}
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-network}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-network}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  db-backup:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-network}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ./backups:/backups
+      - ./ops/db_backup.sh:/db_backup.sh:ro
+    entrypoint: ["sh", "/db_backup.sh"]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # Stateless HTTP/WS gateway — migrations + seed run once here on start.
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "python create_db.py &&
+             alembic upgrade head &&
+             python seed.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
+  # Single probing source: ICMP + SSH + SNMP + syslog + discovery + alerts.
+  collector:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    ports:
+      # Devices send syslog to <host>:514/udp → unprivileged 5514 inside.
+      - "514:5514/udp"
+    cap_add:
+      - NET_RAW
+    command: ["python", "-m", "app.collector"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:
+  redisdata:

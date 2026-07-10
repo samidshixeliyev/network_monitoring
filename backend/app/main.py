@@ -25,15 +25,21 @@ async def lifespan(app: FastAPI):
     # separate collector process by default; only embed it for all-in-one dev.
     tasks = [asyncio.create_task(redis_status_subscriber())]
     if settings.EMBEDDED_COLLECTOR:
+        from app.services.alerts import alert_loop
+        from app.services.discovery import discovery_loop
         from app.services.ping_scheduler import ping_loop
         from app.services.snmp_collector import snmp_poll_loop
         from app.services.ssh_collector import ssh_poll_loop
+        from app.services.syslog_listener import syslog_loop
 
         logger.info("EMBEDDED_COLLECTOR=true — running probe loops in the API process")
         tasks += [
             asyncio.create_task(ping_loop()),
             asyncio.create_task(ssh_poll_loop()),
             asyncio.create_task(snmp_poll_loop()),
+            asyncio.create_task(alert_loop()),
+            asyncio.create_task(syslog_loop()),
+            asyncio.create_task(discovery_loop()),
         ]
 
     yield
@@ -50,7 +56,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Network Monitor", version="0.1.0", lifespan=lifespan)
 
-from app.api.routes import admin, audit, auth, devices, events, monitor, sla, ws  # noqa: E402
+from app.api.routes import (  # noqa: E402
+    admin,
+    audit,
+    auth,
+    devices,
+    discovery,
+    events,
+    monitor,
+    sla,
+    syslog,
+    ws,
+)
 
 app.include_router(auth.router)
 app.include_router(admin.router)
@@ -59,6 +76,8 @@ app.include_router(events.router)
 app.include_router(audit.router)
 app.include_router(monitor.router)
 app.include_router(sla.router)
+app.include_router(syslog.router)
+app.include_router(discovery.router)
 app.include_router(ws.router)
 
 # ── Offline basemap tiles ───────────────────────────────────────────────────
@@ -74,3 +93,29 @@ if os.path.isdir(_TILES_DIR):
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/healthz")
+async def healthz() -> dict:
+    """Unauthenticated liveness for the EXTERNAL watchdog (tools/watchdog.py):
+    is the API up AND is the collector actually completing probe cycles?
+    Exposes only a heartbeat age — no device data."""
+    from datetime import datetime, timezone
+
+    from app.core.config import settings
+    from app.services import state_cache
+
+    age: float | None = None
+    try:
+        hb = await state_cache.get_heartbeat()
+        if hb:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(hb)).total_seconds()
+    except Exception as exc:  # noqa: BLE001 — Redis down → collector unknown
+        logger.warning("healthz heartbeat read failed: %s", exc)
+    limit = max(60, settings.PING_INTERVAL_SECONDS * 4)
+    healthy = age is not None and age <= limit
+    return {
+        "status": "ok",
+        "collector_healthy": healthy,
+        "heartbeat_age_seconds": round(age, 1) if age is not None else None,
+    }

@@ -114,6 +114,19 @@ class Device(Base):
     snmp_version: Mapped[str] = mapped_column(
         String(5), default="2c", server_default="2c", nullable=False
     )
+    # SNMPv3 (USM) — used when snmp_version == "3". The keys are write-only
+    # through the API (like ssh_password / snmp_community).
+    snmp_v3_user: Mapped[str | None] = mapped_column(Unicode(100))
+    # none | md5 | sha | sha256
+    snmp_v3_auth_proto: Mapped[str] = mapped_column(
+        String(10), default="sha", server_default="sha", nullable=False
+    )
+    snmp_v3_auth_key: Mapped[str | None] = mapped_column(Unicode(255))
+    # none | des | aes | aes256
+    snmp_v3_priv_proto: Mapped[str] = mapped_column(
+        String(10), default="aes", server_default="aes", nullable=False
+    )
+    snmp_v3_priv_key: Mapped[str | None] = mapped_column(Unicode(255))
     # Last collection result: unknown | ok | timeout | error
     snmp_status: Mapped[str] = mapped_column(
         String(20), default="unknown", server_default="unknown", nullable=False

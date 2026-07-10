@@ -46,9 +46,13 @@ _RTT_RE = re.compile(r"=\s*[\d.]+/([\d.]+)/")  # Linux: rtt min/avg/max/mdev = .
 
 
 # ── ICMP probing ────────────────────────────────────────────────────────────
-async def _system_ping(ip: str) -> tuple[bool, float | None]:
+_LINUX_RECV_RE = re.compile(r"(\d+)\s+(?:packets\s+)?received")
+
+
+async def _system_ping(ip: str) -> tuple[bool, float | None, int, int]:
     """Send PING_COUNT echo requests via the OS `ping` command (no admin needed
-    on Windows). Returns (alive, avg_rtt_ms). Alive if AT LEAST ONE reply."""
+    on Windows). Returns (alive, avg_rtt_ms, sent, received). Alive if AT LEAST
+    ONE reply — received < sent shows up as partial packet loss."""
     count = settings.PING_COUNT
     timeout = settings.PING_TIMEOUT_SECONDS
     if _IS_WINDOWS:
@@ -62,26 +66,30 @@ async def _system_ping(ip: str) -> tuple[bool, float | None]:
         stdout, _ = await proc.communicate()
     except Exception as exc:  # pragma: no cover - environment dependent
         logger.debug("ping spawn failed for %s: %s", ip, exc)
-        return False, None
+        return False, None, count, 0
 
-    if proc.returncode != 0:
-        return False, None
     out = stdout.decode(errors="replace")
     rtt: float | None = None
     if _IS_WINDOWS:
-        if "TTL=" not in out.upper():
-            # exit 0 on "Destination host unreachable" without a real reply
-            return False, None
+        # Count real echo replies; Windows counts "Destination host unreachable"
+        # lines as Received and exits 0, so "Received = N" can't be trusted.
+        received = out.upper().count("TTL=")
+        if proc.returncode != 0 or received == 0:
+            return False, None, count, 0
         m = re.search(r"Average\s*=\s*(\d+)ms", out)
         rtt = float(m.group(1)) if m else None
     else:
+        m = _LINUX_RECV_RE.search(out)
+        received = int(m.group(1)) if m else (count if proc.returncode == 0 else 0)
+        if proc.returncode != 0 and received == 0:
+            return False, None, count, 0
         m = _RTT_RE.search(out)
         rtt = float(m.group(1)) if m else None
-    return True, rtt
+    return received > 0, rtt, count, min(received, count)
 
 
-async def _ping_host(ip: str) -> tuple[bool, float | None]:
-    """Returns (alive, avg_rtt_ms). rtt may be None if not measurable."""
+async def _ping_host(ip: str) -> tuple[bool, float | None, int, int]:
+    """Returns (alive, avg_rtt_ms, packets_sent, packets_received)."""
     if settings.PING_METHOD == "icmplib":
         from icmplib import async_ping
 
@@ -89,7 +97,7 @@ async def _ping_host(ip: str) -> tuple[bool, float | None]:
             ip, count=settings.PING_COUNT, timeout=settings.PING_TIMEOUT_SECONDS, privileged=True
         )
         rtt = host.avg_rtt if host.is_alive and host.avg_rtt else None
-        return host.is_alive, rtt
+        return host.is_alive, rtt, host.packets_sent, host.packets_received
     return await _system_ping(ip)
 
 
@@ -101,14 +109,19 @@ async def _check_one(device_id: uuid.UUID) -> None:
             return
 
         ip = str(device.ip_address)
-        alive, rtt_ms = await _ping_host(ip)
+        alive, rtt_ms, sent, received = await _ping_host(ip)
 
         prev_status = device.current_status
         now = datetime.now(timezone.utc)
         device.last_checked_at = now
 
-        # Time-series sample for latency/uptime charts (TimescaleDB hypertable).
-        session.add(PingHistory(ts=now, device_id=device.id, success=alive, rtt_ms=rtt_ms))
+        # Time-series sample for latency/uptime/loss charts (TimescaleDB hypertable).
+        session.add(
+            PingHistory(
+                ts=now, device_id=device.id, success=alive, rtt_ms=rtt_ms,
+                sent=sent, received=received,
+            )
+        )
 
         if alive:
             device.consecutive_failures = 0

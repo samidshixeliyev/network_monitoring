@@ -494,6 +494,8 @@ class HistoryPoint(BaseModel):
     avg_rtt_ms: float | None
     uptime_pct: float
     samples: int
+    # Packet-level loss within the bucket (None for rows predating sent/received).
+    loss_pct: float | None = None
 
 
 # range → (window interval, bucket interval) for the time-series query.
@@ -523,7 +525,9 @@ async def device_history(
         SELECT time_bucket(INTERVAL '{bucket}', ts) AS bucket,
                avg(rtt_ms) FILTER (WHERE success)   AS avg_rtt,
                count(*)                             AS total,
-               count(*) FILTER (WHERE success)      AS up
+               count(*) FILTER (WHERE success)      AS up,
+               sum(sent)                            AS sent,
+               sum(received)                        AS received
         FROM ping_history
         WHERE device_id = :did AND ts >= now() - INTERVAL '{window}'
         GROUP BY bucket
@@ -537,15 +541,19 @@ async def device_history(
         return []
 
     points: list[HistoryPoint] = []
-    for bucket_ts, avg_rtt, total, up in rows:
+    for bucket_ts, avg_rtt, total, up, sent, received in rows:
         total = int(total or 0)
         up = int(up or 0)
+        loss = None
+        if sent:
+            loss = round((1 - int(received or 0) / int(sent)) * 100, 1)
         points.append(
             HistoryPoint(
                 ts=bucket_ts,
                 avg_rtt_ms=round(float(avg_rtt), 2) if avg_rtt is not None else None,
                 uptime_pct=round(up / total * 100, 1) if total else 0.0,
                 samples=total,
+                loss_pct=loss,
             )
         )
     return points

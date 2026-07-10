@@ -42,7 +42,11 @@ class DeviceBase(BaseModel):
     # SNMP telemetry config (the community string is write-only, like ssh_password).
     snmp_enabled: bool = False
     snmp_port: Annotated[int, Field(ge=1, le=65535)] = 161
-    snmp_version: Literal["2c"] = "2c"
+    snmp_version: Literal["2c", "3"] = "2c"
+    # SNMPv3 (USM) — only used when snmp_version == "3"; keys are write-only.
+    snmp_v3_user: str | None = None
+    snmp_v3_auth_proto: Literal["none", "md5", "sha", "sha256"] = "sha"
+    snmp_v3_priv_proto: Literal["none", "des", "aes", "aes256"] = "aes"
     # Topology: parent device (alarms suppressed when the parent is down).
     parent_id: uuid.UUID | None = None
     # Multi-condition checks (beyond ICMP): optional TCP port / HTTP URL.
@@ -59,6 +63,8 @@ class DeviceBase(BaseModel):
 class DeviceCreate(DeviceBase):
     ssh_password: str | None = None
     snmp_community: str | None = None
+    snmp_v3_auth_key: str | None = None
+    snmp_v3_priv_key: str | None = None
 
 
 class DeviceUpdate(BaseModel):
@@ -79,6 +85,12 @@ class DeviceUpdate(BaseModel):
     snmp_enabled: bool | None = None
     snmp_port: Annotated[int, Field(ge=1, le=65535)] | None = None
     snmp_community: str | None = None
+    snmp_version: Literal["2c", "3"] | None = None
+    snmp_v3_user: str | None = None
+    snmp_v3_auth_proto: Literal["none", "md5", "sha", "sha256"] | None = None
+    snmp_v3_priv_proto: Literal["none", "des", "aes", "aes256"] | None = None
+    snmp_v3_auth_key: str | None = None
+    snmp_v3_priv_key: str | None = None
     parent_id: uuid.UUID | None = None
     check_tcp_port: Annotated[int, Field(ge=1, le=65535)] | None = None
     check_http_url: str | None = None

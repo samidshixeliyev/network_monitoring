@@ -42,10 +42,13 @@ export interface Device {
   ssh_uptime: string | null
   ssh_facts: string | null
   ssh_collected_at: string | null
-  // SNMP telemetry (read-only; community string never returned)
+  // SNMP telemetry (read-only; community string / v3 keys never returned)
   snmp_enabled: boolean
   snmp_port: number
   snmp_version: string
+  snmp_v3_user: string | null
+  snmp_v3_auth_proto: string
+  snmp_v3_priv_proto: string
   snmp_status: string
   snmp_facts: string | null
   snmp_collected_at: string | null
@@ -134,6 +137,12 @@ export interface DeviceCreate {
   snmp_enabled?: boolean
   snmp_port?: number
   snmp_community?: string | null
+  snmp_version?: '2c' | '3'
+  snmp_v3_user?: string | null
+  snmp_v3_auth_proto?: 'none' | 'md5' | 'sha' | 'sha256'
+  snmp_v3_priv_proto?: 'none' | 'des' | 'aes' | 'aes256'
+  snmp_v3_auth_key?: string | null
+  snmp_v3_priv_key?: string | null
 }
 
 export type DeviceUpdate = Partial<DeviceCreate>
@@ -202,6 +211,44 @@ export interface HistoryPoint {
   avg_rtt_ms: number | null
   uptime_pct: number
   samples: number
+  /** Packet-level loss within the bucket; null for rows predating the metric. */
+  loss_pct: number | null
+}
+
+// ── Syslog ────────────────────────────────────────────────────────────────────
+export interface SyslogMessage {
+  id: string
+  ts: string
+  host: string
+  device_id: string | null
+  facility: number | null
+  severity: number // 0=emerg … 7=debug
+  app_name: string | null
+  message: string
+}
+
+export interface PaginatedSyslog {
+  total: number
+  items: SyslogMessage[]
+}
+
+// ── Auto-discovery ────────────────────────────────────────────────────────────
+export interface DiscoveredDevice {
+  id: string
+  ip_address: string
+  hostname: string | null
+  rtt_ms: number | null
+  status: 'new' | 'ignored' | string
+  first_seen: string
+  last_seen: string
+}
+
+export interface DiscoveryStatus {
+  enabled: boolean
+  subnets: string
+  interval_seconds: number
+  pending: number
+  ignored: number
 }
 
 // The gateway coalesces status changes into a single batch frame (~250ms window).

@@ -5,6 +5,7 @@ import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { EventLog } from './pages/EventLog'
 import { AdminPanel } from './pages/AdminPanel'
+import { Discovery } from './pages/Discovery'
 import type { ReactNode } from 'react'
 
 const qc = new QueryClient({
@@ -47,6 +48,10 @@ export default function App() {
             <Route
               path="/events"
               element={<RequireAuth><EventLog /></RequireAuth>}
+            />
+            <Route
+              path="/discovery"
+              element={<RequireAuth><Discovery /></RequireAuth>}
             />
             <Route
               path="/admin"

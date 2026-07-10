@@ -85,19 +85,80 @@ def _format_uptime(ticks: int) -> str:
     return " ".join(parts)
 
 
+# SNMPv3 USM protocol names → pysnmp protocol OIDs (resolved lazily so the
+# import cost is only paid when a v3 device exists).
+def _v3_protocols(auth_name: str, priv_name: str):
+    from pysnmp.hlapi.v3arch.asyncio import (
+        usmAesCfb128Protocol,
+        usmAesCfb256Protocol,
+        usmDESPrivProtocol,
+        usmHMAC192SHA256AuthProtocol,
+        usmHMACMD5AuthProtocol,
+        usmHMACSHAAuthProtocol,
+        usmNoAuthProtocol,
+        usmNoPrivProtocol,
+    )
+
+    auth = {
+        "none": usmNoAuthProtocol,
+        "md5": usmHMACMD5AuthProtocol,
+        "sha": usmHMACSHAAuthProtocol,
+        "sha256": usmHMAC192SHA256AuthProtocol,
+    }[auth_name]
+    priv = {
+        "none": usmNoPrivProtocol,
+        "des": usmDESPrivProtocol,
+        "aes": usmAesCfb128Protocol,
+        "aes256": usmAesCfb256Protocol,
+    }[priv_name]
+    return auth, priv
+
+
 class _Snmp:
-    """Thin wrapper around pysnmp v1arch asyncio for GET + WALK with v2c."""
+    """Thin wrapper around pysnmp asyncio for GET + WALK.
 
-    def __init__(self, host: str, port: int, community: str):
-        from pysnmp.hlapi.v1arch.asyncio import CommunityData, SnmpDispatcher
+    v2c rides the lightweight v1arch dispatcher; v3 (USM auth/priv) needs the
+    full v3arch SnmpEngine. Both expose the same get/walk/close interface, so
+    the collection code above doesn't care which one it got."""
 
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        *,
+        community: str | None = None,
+        v3_user: str | None = None,
+        v3_auth_proto: str = "sha",
+        v3_auth_key: str | None = None,
+        v3_priv_proto: str = "aes",
+        v3_priv_key: str | None = None,
+    ):
         self.host = host
         self.port = port
-        self.dispatcher = SnmpDispatcher()
-        self.auth = CommunityData(community, mpModel=1)  # v2c
+        self.v3 = v3_user is not None
+        if self.v3:
+            from pysnmp.hlapi.v3arch.asyncio import ContextData, SnmpEngine, UsmUserData
+
+            auth_proto, priv_proto = _v3_protocols(v3_auth_proto, v3_priv_proto)
+            kwargs: dict = {}
+            if v3_auth_proto != "none" and v3_auth_key:
+                kwargs = {"authKey": v3_auth_key, "authProtocol": auth_proto}
+                if v3_priv_proto != "none" and v3_priv_key:
+                    kwargs |= {"privKey": v3_priv_key, "privProtocol": priv_proto}
+            self.engine = SnmpEngine()
+            self.auth = UsmUserData(v3_user, **kwargs)
+            self.context = ContextData()
+        else:
+            from pysnmp.hlapi.v1arch.asyncio import CommunityData, SnmpDispatcher
+
+            self.dispatcher = SnmpDispatcher()
+            self.auth = CommunityData(community, mpModel=1)  # v2c
 
     async def _target(self):
-        from pysnmp.hlapi.v1arch.asyncio import UdpTransportTarget
+        if self.v3:
+            from pysnmp.hlapi.v3arch.asyncio import UdpTransportTarget
+        else:
+            from pysnmp.hlapi.v1arch.asyncio import UdpTransportTarget
 
         return await UdpTransportTarget.create(
             (self.host, self.port),
@@ -105,13 +166,24 @@ class _Snmp:
             retries=settings.SNMP_RETRIES,
         )
 
+    async def _cmd_args(self) -> tuple:
+        if self.v3:
+            return (self.engine, self.auth, await self._target(), self.context)
+        return (self.dispatcher, self.auth, await self._target())
+
+    def _hlapi(self):
+        if self.v3:
+            from pysnmp.hlapi.v3arch import asyncio as hlapi
+        else:
+            from pysnmp.hlapi.v1arch import asyncio as hlapi
+        return hlapi
+
     async def get(self, *oids: str) -> dict[str, object]:
         """GET scalars. Returns {oid: value} (missing/noSuchObject omitted)."""
-        from pysnmp.hlapi.v1arch.asyncio import ObjectIdentity, ObjectType, get_cmd
-
-        err_ind, err_status, _err_idx, var_binds = await get_cmd(
-            self.dispatcher, self.auth, await self._target(),
-            *[ObjectType(ObjectIdentity(o)) for o in oids],
+        hlapi = self._hlapi()
+        err_ind, err_status, _err_idx, var_binds = await hlapi.get_cmd(
+            *await self._cmd_args(),
+            *[hlapi.ObjectType(hlapi.ObjectIdentity(o)) for o in oids],
         )
         if err_ind:
             raise TimeoutError(str(err_ind))
@@ -126,12 +198,11 @@ class _Snmp:
 
     async def walk(self, base_oid: str) -> dict[int, object]:
         """WALK a column. Returns {last_index: value}."""
-        from pysnmp.hlapi.v1arch.asyncio import ObjectIdentity, ObjectType, walk_cmd
-
+        hlapi = self._hlapi()
         out: dict[int, object] = {}
-        async for err_ind, err_status, _err_idx, var_binds in walk_cmd(
-            self.dispatcher, self.auth, await self._target(),
-            ObjectType(ObjectIdentity(base_oid)),
+        async for err_ind, err_status, _err_idx, var_binds in hlapi.walk_cmd(
+            *await self._cmd_args(),
+            hlapi.ObjectType(hlapi.ObjectIdentity(base_oid)),
         ):
             if err_ind:
                 raise TimeoutError(str(err_ind))
@@ -145,7 +216,14 @@ class _Snmp:
         return out
 
     def close(self) -> None:
-        self.dispatcher.close()
+        if self.v3:
+            close = getattr(self.engine, "close_dispatcher", None)
+            if close is not None:
+                close()
+            elif self.engine.transport_dispatcher is not None:
+                self.engine.transport_dispatcher.close_dispatcher()
+        else:
+            self.dispatcher.close()
 
 
 def _mem_percent(descrs: dict, units: dict, sizes: dict, useds: dict) -> float | None:
@@ -212,10 +290,9 @@ async def _vendor_mem(snmp: "_Snmp") -> float | None:
     return None
 
 
-async def _run_collection(device_id: uuid.UUID, host: str, port: int, community: str) -> dict:
+async def _run_collection(device_id: uuid.UUID, snmp: _Snmp) -> dict:
     """Poll one device. Returns {facts, cpu, mem, in_bps, out_bps}. Raises on
     timeout/SNMP errors."""
-    snmp = _Snmp(host, port, community)
     try:
         sys_vals = await snmp.get(OID_SYS_DESCR, OID_SYS_UPTIME, OID_SYS_NAME)
 
@@ -336,21 +413,31 @@ async def collect_device(device_id: uuid.UUID) -> dict | None:
         device = await session.get(Device, device_id)
         if device is None or not device.snmp_enabled:
             return None
-        if not device.snmp_community:
+        is_v3 = device.snmp_version == "3"
+        if (is_v3 and not device.snmp_v3_user) or (not is_v3 and not device.snmp_community):
             device.snmp_status = "error"
             device.snmp_collected_at = datetime.now(timezone.utc)
             await session.commit()
-            return {"status": "error", "detail": "no snmp_community set"}
+            missing = "snmp_v3_user" if is_v3 else "snmp_community"
+            return {"status": "error", "detail": f"no {missing} set"}
 
+        snmp = _Snmp(
+            str(device.ip_address),
+            device.snmp_port or 161,
+            community=None if is_v3 else device.snmp_community,
+            v3_user=device.snmp_v3_user if is_v3 else None,
+            v3_auth_proto=device.snmp_v3_auth_proto or "sha",
+            v3_auth_key=device.snmp_v3_auth_key,
+            v3_priv_proto=device.snmp_v3_priv_proto or "aes",
+            v3_priv_key=device.snmp_v3_priv_key,
+        )
         host = str(device.ip_address)
-        port = device.snmp_port or 161
-        community = device.snmp_community
 
         status = "ok"
         detail = None
         result: dict | None = None
         try:
-            result = await _run_collection(device.id, host, port, community)
+            result = await _run_collection(device.id, snmp)
         except Exception as exc:  # noqa: BLE001 — classify
             status = "timeout" if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) else "error"
             detail = f"{type(exc).__name__}: {exc}"

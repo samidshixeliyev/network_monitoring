@@ -41,6 +41,26 @@ services:
       retries: 12
       start_period: 20s
 
+  # ── Scheduled DB backups (daily pg_dump + rotation → ../backups on host) ────
+  db-backup:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: "Lab_Str0ng_Pass!"
+      PGDATABASE: network
+      BACKUP_INTERVAL_SECONDS: "86400"
+      BACKUP_KEEP: "14"
+    networks: [netlab]
+    volumes:
+      - ../backups:/backups
+      - ../ops/db_backup.sh:/db_backup.sh:ro
+    entrypoint: ["sh", "/db_backup.sh"]
+
   # ── Redis: current-state cache + pub/sub bus ───────────────────────────────
   redis:
     image: redis:7-alpine
@@ -183,6 +203,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "Lab_Str0ng_Pass!"
       REDIS_URL: redis://redis:6379/0
+      # Settings validation refuses a default SECRET_KEY under production —
+      # the collector never signs tokens, but shares the same Settings class.
+      SECRET_KEY: lab-secret-change-me-0123456789abcdef
       ENVIRONMENT: production
       SIMULATION_MODE: "false"
       # Inside the container icmplib works (NET_RAW cap granted in the image).
@@ -197,8 +220,18 @@ services:
       # SNMP telemetry collector (polls the device containers' snmpd).
       SNMP_ENABLED: "true"
       SNMP_POLL_INTERVAL_SECONDS: "30"
+      # Syslog receiver — device containers (or the host) can send RFC3164/5424
+      # to <host>:514/udp (published below → unprivileged 5514 inside).
+      SYSLOG_ENABLED: "true"
+      # Auto-discovery: sweep the lab subnet; unmonitored responders (db/redis/
+      # api containers) appear as pending devices — approve or ignore in the UI.
+      DISCOVERY_ENABLED: "true"
+      DISCOVERY_SUBNETS: "172.30.0.0/24"
+      DISCOVERY_INTERVAL_SECONDS: "600"
     networks: [netlab]
     restart: unless-stopped
+    ports:
+      - "514:5514/udp"
     cap_add:
       - NET_RAW
     volumes:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Uuid
+from sqlalchemy import Boolean, DateTime, Float, Integer, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -23,3 +23,8 @@ class PingHistory(Base):
     device_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     rtt_ms: Mapped[float | None] = mapped_column(Float)
+    # Per-check packet counts — partial loss (degraded link) is visible even
+    # while the check still counts as "success" (≥1 reply). Nullable: rows from
+    # before this column existed, or probe methods that can't count.
+    sent: Mapped[int | None] = mapped_column(Integer)
+    received: Mapped[int | None] = mapped_column(Integer)

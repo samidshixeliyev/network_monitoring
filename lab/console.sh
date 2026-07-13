@@ -10,13 +10,13 @@ name="$1"
 
 if [ -z "$name" ]; then
   echo "Lab devices (console = docker exec, works even if the port is down):"
-  docker ps --filter "label=com.docker.compose.project=netmon-lab" --format "{{.Names}}" | grep -Ev "db|redis|api" | sort | sed 's/^/  /'
+  docker ps --filter "label=netmon.role=device" --format "{{.Names}}" | sort | sed 's/^/  /'
   echo
   echo "usage: ./console.sh <device>     e.g.  ./console.sh cisco-isr-baki"
   exit 0
 fi
 
-full=$(docker ps --filter "label=com.docker.compose.project=netmon-lab" --format "{{.Names}}" | grep -Ev "db|redis|api" | grep -i "$name" | head -1)
+full=$(docker ps --filter "label=netmon.role=device" --format "{{.Names}}" | grep -i "$name" | head -1)
 [ -z "$full" ] && { echo "No running device matches '$name'"; exit 1; }
 
 echo "console → $full   (type 'exit' or Ctrl-D to leave)"

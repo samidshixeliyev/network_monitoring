@@ -19,22 +19,27 @@ bridge network isn't routable from the host). So the prober (the `api`) must run
 
 ## Run
 
-```bash
-cd lab
-docker compose up -d --build        # builds api image, pulls mssql + alpine
-```
-
-On first start the `api` container automatically: creates the `network` DB →
-runs migrations → seeds the manager account → seeds the 4 lab devices.
-
-Then start the frontend on the host as usual:
+> The lab no longer has its own compose file. It's now the **`lab` profile** of
+> the single root `docker-compose.yml`, so the app and the lab can never clash
+> on ports. Run from the **repo root**, not from `lab/`:
 
 ```bash
-cd ../frontend
-npm run dev                          # http://localhost:5173
+docker compose --profile lab up -d --build
 ```
+
+This starts the whole app (db, redis, api:8000, collector, frontend:5173,
+backups) **plus** the 4 pingable/SSH-able devices and a one-shot seeder. On boot
+the `api` creates the `network` DB → runs migrations → seeds the manager account;
+the `lab-seed` service then registers the 4 lab devices.
+
+The frontend runs as a container at http://localhost:5173 — no separate
+`npm run dev` needed (though you can still run it on the host for live editing).
 
 Login `admin@example.com` / `changeme`. The map shows 4 devices, all **online**.
+
+App-only (no lab devices): just `docker compose up -d --build`.
+The device-console helper (`lab/console.sh`) still works — it now finds devices
+by the `netmon.role=device` label.
 
 ## Test the live state machine
 

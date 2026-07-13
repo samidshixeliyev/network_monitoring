@@ -1,12 +1,57 @@
-# Self-contained dev stack: PostgreSQL+TimescaleDB, Redis, API, frontend,
-# scheduled DB backups. For the full monitoring lab with pingable "network
-# devices", use lab/docker-compose.yml instead. For production (no --reload,
-# no code mounts, separate collector, nginx frontend) use docker-compose.prod.yml.
+# ── Single dev/lab stack ─────────────────────────────────────────────────────
+# ONE compose file, two modes selected by a profile (no more clashing stacks):
 #
-# Secrets come from .env at the repo root (docker compose reads it natively):
-#   POSTGRES_PASSWORD=...   SECRET_KEY=...
+#   docker compose up -d --build               → app only
+#       db + redis + api(:8000) + collector + frontend(:5173) + backups
+#
+#   docker compose --profile lab up -d --build → app + a REAL monitoring lab
+#       …everything above, PLUS 4 pingable/SSH-able "network devices" on a fixed
+#       subnet (172.30.0.0/24) that the collector actually probes, plus a
+#       one-shot seeder that registers them in the DB.
+#
+# Both modes share the same ports, so they can NEVER collide — you just add or
+# drop the `--profile lab` device containers. To switch modes cleanly first run
+# `docker compose --profile lab down` (down ignores profiles for teardown).
+#
+# Secrets come from .env at the repo root (compose reads it natively):
+#   POSTGRES_PASSWORD=...   SECRET_KEY=...   (ENVIRONMENT=production needs a real key)
+#
+# For production (nginx frontend, no code mounts, no --reload) use
+# docker-compose.prod.yml instead.
+
+name: netmon
+
+networks:
+  # A fixed-subnet bridge so the collector can reach the lab devices by static
+  # IP. Harmless in app-only mode (the device containers simply aren't started).
+  netlab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  pgdata:
+  redisdata:
+
+# ── Shared building blocks (YAML anchors) ────────────────────────────────────
+x-backend-build: &backend-build
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+
+x-db-env: &db-env
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-network}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${SECRET_KEY:-change-this-secret}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
 
 services:
+  # ── PostgreSQL + TimescaleDB ───────────────────────────────────────────────
   db:
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
@@ -14,6 +59,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-network}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    networks: [netlab]
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,8 +69,21 @@ services:
       retries: 12
       start_period: 20s
 
-  # Daily pg_dump with rotation into ./backups on the HOST (survives volume
-  # loss). Same image as `db` so pg_dump matches the server version.
+  # ── Redis: current-state cache + pub/sub bus ───────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    networks: [netlab]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # ── Daily pg_dump with rotation into ./backups on the HOST ─────────────────
   db-backup:
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
@@ -38,27 +97,17 @@ services:
       PGDATABASE: ${POSTGRES_DB:-network}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    networks: [netlab]
     volumes:
       - ./backups:/backups
       - ./ops/db_backup.sh:/db_backup.sh:ro
     entrypoint: ["sh", "/db_backup.sh"]
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-
+  # ── API: serves the app + runs migrations/seed on boot ─────────────────────
+  # All probing lives in the `collector` service, so the API never embeds the
+  # probe loops (EMBEDDED_COLLECTOR=false) — no double-polling.
   api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    <<: *backend-build
     restart: unless-stopped
     depends_on:
       db:
@@ -66,21 +115,11 @@ services:
       redis:
         condition: service_healthy
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-network}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-change-this-secret}
-      ENVIRONMENT: development
+      <<: *db-env
+      EMBEDDED_COLLECTOR: "false"
+    networks: [netlab]
     ports:
       - "8000:8000"
-      # Syslog receiver: devices send to <host>:514/udp; the container binds the
-      # unprivileged SYSLOG_PORT (5514) so it can stay non-root.
-      - "514:5514/udp"
-    cap_add:
-      - NET_RAW
     volumes:
       - ./backend:/app
     command: >
@@ -89,6 +128,53 @@ services:
              python seed.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+  # ── Collector: the SINGLE probing process (ICMP + SSH + SNMP + traps + syslog
+  # + discovery). NET_RAW for icmplib. Idles harmlessly when no devices exist. ─
+  collector:
+    <<: *backend-build
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      <<: *db-env
+      EMBEDDED_COLLECTOR: "false"
+      PING_METHOD: icmplib
+      PING_INTERVAL_SECONDS: "30"
+      PING_FAST_INTERVAL_SECONDS: "5"
+      PING_COUNT: "3"
+      FLAP_THRESHOLD: "2"
+      SSH_ENABLED: "true"
+      SSH_POLL_INTERVAL_SECONDS: "30"
+      SNMP_ENABLED: "true"
+      SNMP_POLL_INTERVAL_SECONDS: "30"
+      # SNMP trap receiver: device snmpd trap2sink → collector:1620/udp
+      # (published to the host as 162/udp below for real gear / manual testing).
+      SNMP_TRAP_ENABLED: "${SNMP_TRAP_ENABLED:-true}"
+      SNMP_TRAP_PORT: "1620"
+      SYSLOG_ENABLED: "${SYSLOG_ENABLED:-true}"
+      # Auto-discovery sweeps the lab subnet; off by default (noisy without a lab).
+      DISCOVERY_ENABLED: "${DISCOVERY_ENABLED:-false}"
+      DISCOVERY_SUBNETS: "${DISCOVERY_SUBNETS:-172.30.0.0/24}"
+      DISCOVERY_INTERVAL_SECONDS: "600"
+    networks: [netlab]
+    ports:
+      - "514:5514/udp"
+      - "162:1620/udp"
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "sleep 8 && python -m app.collector"
+
+  # ── Frontend: Vite dev server in a container (:5173) ───────────────────────
+  # client.ts always calls the relative /api, so Vite proxies it — and inside the
+  # container the API is at http://api:8000, not localhost (see VITE_PROXY_TARGET).
   frontend:
     build:
       context: ./frontend
@@ -96,14 +182,106 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    environment:
+      VITE_PROXY_TARGET: http://api:8000
+    networks: [netlab]
     ports:
       - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      VITE_API_URL: http://localhost:8000
 
-volumes:
-  pgdata:
-  redisdata:
+  # ══ Lab profile: real "network devices" + a one-shot seeder ════════════════
+  # Registers the 4 devices (172.30.0.11-14) in the DB, then exits. Runs after
+  # the API has applied migrations. Only started with `--profile lab`.
+  lab-seed:
+    <<: *backend-build
+    profiles: [lab]
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      <<: *db-env
+    networks: [netlab]
+    restart: "no"
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "sleep 12 && python seed_lab_devices.py"
+
+  # Lightweight Alpine stand-ins: reply to ICMP, accept SSH (root / Lab_Dev1ce!),
+  # run snmpd. `netmon.role=device` labels them for lab/console.sh. NET_ADMIN lets
+  # `port down/up` toggle eth0 to test alerts. SSH published as 2211-2214.
+  cisco-isr-baki:
+    profiles: [lab]
+    build: ./lab/device
+    image: netmon-lab-device
+    container_name: cisco-isr-baki
+    hostname: cisco-isr-baki
+    labels: ["netmon.role=device"]
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.11
+    ports:
+      - "2211:22"
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  juniper-mx-ganja:
+    profiles: [lab]
+    build: ./lab/device
+    image: netmon-lab-device
+    container_name: juniper-mx-ganja
+    hostname: juniper-mx-ganja
+    labels: ["netmon.role=device"]
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.12
+    ports:
+      - "2212:22"
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  cisco-cat-sumqayit:
+    profiles: [lab]
+    build: ./lab/device
+    image: netmon-lab-device
+    container_name: cisco-cat-sumqayit
+    hostname: cisco-cat-sumqayit
+    labels: ["netmon.role=device"]
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.13
+    ports:
+      - "2213:22"
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  juniper-srx-lankaran:
+    profiles: [lab]
+    build: ./lab/device
+    image: netmon-lab-device
+    container_name: juniper-srx-lankaran
+    hostname: juniper-srx-lankaran
+    labels: ["netmon.role=device"]
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.14
+    ports:
+      - "2214:22"
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped

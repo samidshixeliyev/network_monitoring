@@ -111,6 +111,18 @@ async def _device_map() -> dict[str, uuid.UUID]:
 
 # Per-host "last alerted" for severity escalation rate-limiting.
 _alerted_at: dict[str, float] = {}
+# Hard cap in case a flood of unique source IPs alerts within one cooldown window.
+_ALERTED_MAX = 4096
+
+
+def _prune_alerted(now: float, cooldown: float) -> None:
+    """Drop hosts past their cooldown so a churning set of source IPs can't grow
+    _alerted_at without bound and OOM the long-running collector."""
+    for host in [h for h, t in _alerted_at.items() if now - t >= cooldown]:
+        del _alerted_at[host]
+    if len(_alerted_at) > _ALERTED_MAX:
+        for host in sorted(_alerted_at, key=_alerted_at.__getitem__)[: len(_alerted_at) - _ALERTED_MAX]:
+            del _alerted_at[host]
 
 
 async def _maybe_alert(rows: list[dict], ip_to_device: dict[str, uuid.UUID]) -> None:
@@ -118,11 +130,13 @@ async def _maybe_alert(rows: list[dict], ip_to_device: dict[str, uuid.UUID]) -> 
     if max_sev < 0:
         return
     now = time.monotonic()
+    cooldown = settings.SYSLOG_ALERT_COOLDOWN_SECONDS
+    _prune_alerted(now, cooldown)
     for row in rows:
         if row["severity"] > max_sev:
             continue
         last = _alerted_at.get(row["host"])
-        if last and now - last < settings.SYSLOG_ALERT_COOLDOWN_SECONDS:
+        if last and now - last < cooldown:
             continue
         _alerted_at[row["host"]] = now
         sev_name = SEVERITY_NAMES[row["severity"]]

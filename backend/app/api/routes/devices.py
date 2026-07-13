@@ -23,12 +23,15 @@ from app.schemas.device import (
     DeviceSimulate,
     DeviceUpdate,
     SnmpCheckResult,
+    SnmpInventoryResult,
     SshCheckResult,
     serialize_device,
 )
 from app.services import state_cache
 from app.services.audit import add_audit
 from app.services.snmp_collector import collect_device as snmp_collect_device
+from app.services.snmp_collector import inventory_device as snmp_inventory_device
+from app.services.snmp_collector import peek_device as snmp_peek_device
 from app.services.ssh_collector import collect_device
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -266,6 +269,50 @@ async def snmp_check_device(
     if result is None:
         raise HTTPException(status_code=400, detail="SNMP is not configured for this device")
     return SnmpCheckResult(**result)
+
+
+@router.post("/{device_id}/snmp-peek", response_model=SnmpCheckResult)
+async def snmp_peek(
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission(SNMP)),
+) -> SnmpCheckResult:
+    """Live read-only SNMP poll for the real-time traffic modal: returns the
+    same facts as snmp-check but persists NOTHING (no history row, no audit,
+    no cache write), so it's safe to call ~1×/second. Requires `snmp`."""
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not device.snmp_enabled:
+        raise HTTPException(status_code=400, detail="SNMP is not enabled for this device")
+
+    # Reuse the device we just loaded — snmp_peek runs ~1×/s, so skip a second fetch.
+    result = await snmp_peek_device(device_id, device=device)
+    if result is None:
+        raise HTTPException(status_code=400, detail="SNMP is not configured for this device")
+    return SnmpCheckResult(**result)
+
+
+@router.post("/{device_id}/snmp-inventory", response_model=SnmpInventoryResult)
+async def snmp_inventory(
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission(SNMP)),
+) -> SnmpInventoryResult:
+    """Comprehensive on-demand SNMP walk (system/identity, CPU/RAM/disk, rich
+    interfaces with error/discard counters, sensors, VLAN, MAC, ARP, routing,
+    QoS, VPN, wireless, UPS). Persists NOTHING. Backs the SNMP Explorer modal.
+    Requires `snmp`."""
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not device.snmp_enabled:
+        raise HTTPException(status_code=400, detail="SNMP is not enabled for this device")
+
+    result = await snmp_inventory_device(device_id)
+    if result is None:
+        raise HTTPException(status_code=400, detail="SNMP is not configured for this device")
+    return SnmpInventoryResult(**result)
 
 
 class SnmpHistoryPoint(BaseModel):

@@ -1,7 +1,7 @@
 import { apiClient } from './client'
 import type {
   Device, DeviceCreate, DeviceUpdate, HistoryPoint, PingNowResult,
-  SnmpCheckResult, SnmpHistoryPoint, SshCheckResult, TraceHop,
+  SnmpCheckResult, SnmpHistoryPoint, SnmpInventoryResult, SshCheckResult, TraceHop,
 } from '../types'
 
 export const devicesApi = {
@@ -38,6 +38,17 @@ export const devicesApi = {
   },
   snmpCheck: async (id: string): Promise<SnmpCheckResult> => {
     const { data } = await apiClient.post<SnmpCheckResult>(`/devices/${id}/snmp-check`, {})
+    return data
+  },
+  // Live read-only poll for the traffic modal — persists nothing, safe ~1×/s.
+  snmpPeek: async (id: string): Promise<SnmpCheckResult> => {
+    const { data } = await apiClient.post<SnmpCheckResult>(`/devices/${id}/snmp-peek`, {})
+    return data
+  },
+  // Comprehensive on-demand SNMP walk (system/disk/interfaces/sensors/VLAN/MAC/
+  // ARP/routing/QoS/VPN/wireless/UPS). Persists nothing — backs the Explorer.
+  snmpInventory: async (id: string): Promise<SnmpInventoryResult> => {
+    const { data } = await apiClient.post<SnmpInventoryResult>(`/devices/${id}/snmp-inventory`, {})
     return data
   },
   snmpHistory: async (id: string, range = '24h'): Promise<SnmpHistoryPoint[]> => {

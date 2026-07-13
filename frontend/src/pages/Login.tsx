@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
 import { useAuth } from '../hooks/useAuth'
 
 export function Login() {
@@ -17,8 +18,12 @@ export function Login() {
     try {
       await login(email, password)
       navigate('/')
-    } catch {
-      setError('Invalid email or password')
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        setError('Həddindən çox uğursuz cəhd. Bir neçə dəqiqə gözləyib yenidən yoxlayın.')
+      } else {
+        setError('E-poçt və ya parol yanlışdır')
+      }
     } finally {
       setLoading(false)
     }
@@ -34,21 +39,21 @@ export function Login() {
       <div style={{ background: '#fff', borderRadius: 12, padding: 36, width: 380, boxShadow: '0 4px 24px rgba(0,0,0,0.1)' }}>
         <div style={{ marginBottom: 28 }}>
           <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: '#1e293b' }}>
-            Network Monitor
+            Şəbəkə Monitoru
           </h1>
-          <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>Sign in to your account</p>
+          <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>Hesabınıza daxil olun</p>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 14 }}>
           <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4, color: '#374151' }}>
-              Email
+              E-poçt
             </label>
             <input type="email" required style={inp} value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4, color: '#374151' }}>
-              Password
+              Parol
             </label>
             <input type="password" required style={inp} value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
@@ -65,7 +70,7 @@ export function Login() {
               opacity: loading ? 0.7 : 1, fontFamily: 'inherit',
             }}
           >
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Daxil olunur…' : 'Daxil ol'}
           </button>
         </form>
       </div>

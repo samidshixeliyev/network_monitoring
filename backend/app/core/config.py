@@ -129,6 +129,21 @@ class Settings(BaseSettings):
     SYSLOG_ALERT_MAX_SEVERITY: int = 2
     SYSLOG_ALERT_COOLDOWN_SECONDS: int = 300
 
+    # ── SNMP trap receiver (SNMPv1 / v2c traps over UDP) ─────────────────────
+    # Network devices point their `snmp-server host <ip>` / `trap2sink` here.
+    # Traps land in the snmp_traps hypertable; linkDown / authFailure / coldStart
+    # also escalate through the alert channels (rate-limited per source host).
+    SNMP_TRAP_ENABLED: bool = False
+    SNMP_TRAP_BIND: str = "0.0.0.0"
+    # >1024 so the non-root container can bind; docker-compose maps 162/udp → this.
+    SNMP_TRAP_PORT: int = 1620
+    SNMP_TRAP_ALERT: bool = True
+    SNMP_TRAP_ALERT_COOLDOWN_SECONDS: int = 300
+    # Only traps at or below this severity (0=emerg … 7=debug) escalate to the
+    # alert channels. Default 4 keeps coldStart/authFailure/linkDown alerting;
+    # lower it (e.g. 2) to page only on linkDown, or set <0 to silence all traps.
+    SNMP_TRAP_ALERT_MAX_SEVERITY: int = 4
+
     # ── Auto-discovery (ICMP sweep of known subnets) ─────────────────────────
     # Comma-separated CIDRs, e.g. "10.0.0.0/24, 192.168.1.0/24". Responding IPs
     # that are not yet monitored appear as pending devices for admin approval.

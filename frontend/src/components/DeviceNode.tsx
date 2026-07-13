@@ -32,7 +32,11 @@ export function DeviceNode({ data, selected }: NodeProps<DeviceNodeType>) {
       {/* Status stripe */}
       <div style={{ height: 3, background: s.stripe }} />
 
-      <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: 'none' }} />
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ width: 9, height: 9, background: '#fff', border: '2px solid #14b8a6', top: -5 }}
+      />
 
       <div style={{ padding: '10px 12px' }}>
         {/* Name row */}
@@ -82,7 +86,11 @@ export function DeviceNode({ data, selected }: NodeProps<DeviceNodeType>) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: 'none' }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ width: 9, height: 9, background: '#14b8a6', border: '2px solid #fff', bottom: -5 }}
+      />
     </div>
   )
 }

@@ -56,29 +56,37 @@ def _sms_numbers() -> list[str]:
     return [n.strip() for n in settings.ALERT_SMS_TO.split(",") if n.strip()]
 
 
+async def _send_one_sms(number: str, subject: str) -> bool:
+    """Run ALERT_SMS_COMMAND for one number, substituting {to} and {text}."""
+    argv = [
+        part.replace("{to}", number).replace("{text}", subject)
+        for part in shlex.split(settings.ALERT_SMS_COMMAND)
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        if proc.returncode != 0:
+            logger.error("sms command exited %s: %s", proc.returncode, stderr.decode(errors="replace")[:200])
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.error("sms command failed for %s: %s", number, exc)
+        return False
+
+
 async def _send_sms(subject: str) -> bool:
-    """Run ALERT_SMS_COMMAND once per number, substituting {to} and {text}.
-    SMS bodies are tiny — only the subject line is sent."""
-    ok = True
-    for number in _sms_numbers():
-        argv = [
-            part.replace("{to}", number).replace("{text}", subject)
-            for part in shlex.split(settings.ALERT_SMS_COMMAND)
-        ]
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-            if proc.returncode != 0:
-                logger.error("sms command exited %s: %s", proc.returncode, stderr.decode(errors="replace")[:200])
-                ok = False
-        except Exception as exc:  # noqa: BLE001
-            logger.error("sms command failed for %s: %s", number, exc)
-            ok = False
-    return ok
+    """Send to every recipient concurrently — the per-number subprocesses are
+    independent, so a slow gateway shouldn't serialize (num_recipients × 30s) of
+    latency onto the alert task. SMS bodies are tiny — only the subject is sent."""
+    numbers = _sms_numbers()
+    if not numbers:
+        return True
+    results = await asyncio.gather(*(_send_one_sms(n, subject) for n in numbers))
+    return all(results)
 
 
 def active_channels() -> list[str]:

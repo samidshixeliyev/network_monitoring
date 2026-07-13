@@ -44,6 +44,7 @@ x-backend-env: &backend-env
   DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-false}
   DISCOVERY_SUBNETS: ${DISCOVERY_SUBNETS:-}
   SNMP_ENABLED: ${SNMP_ENABLED:-false}
+  SNMP_TRAP_ENABLED: ${SNMP_TRAP_ENABLED:-false}
   SSH_ENABLED: ${SSH_ENABLED:-false}
 
 services:
@@ -111,7 +112,8 @@ services:
       sh -c "python create_db.py &&
              alembic upgrade head &&
              python seed.py &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+             --proxy-headers --forwarded-allow-ips '*'"
 
   # Single probing source: ICMP + SSH + SNMP + syslog + discovery + alerts.
   collector:
@@ -128,6 +130,8 @@ services:
     ports:
       # Devices send syslog to <host>:514/udp → unprivileged 5514 inside.
       - "514:5514/udp"
+      # SNMP traps to <host>:162/udp → unprivileged 1620 inside.
+      - "162:1620/udp"
     cap_add:
       - NET_RAW
     command: ["python", "-m", "app.collector"]

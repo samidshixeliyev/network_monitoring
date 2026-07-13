@@ -5,10 +5,12 @@ from app.models.permission import Permission, role_permissions
 from app.models.role import Role
 from app.models.user import User
 from app.models.device import Device, DeviceStatus
+from app.models.device_link import DeviceLink
 from app.models.event_log import EventLog, EventType
 from app.models.audit_log import AuditLog
 from app.models.ping_history import PingHistory
 from app.models.snmp_history import SnmpHistory
+from app.models.snmp_trap import SnmpTrap
 from app.models.syslog import SyslogMessage
 from app.models.discovered import DiscoveredDevice
 
@@ -20,11 +22,13 @@ __all__ = [
     "User",
     "Device",
     "DeviceStatus",
+    "DeviceLink",
     "EventLog",
     "EventType",
     "AuditLog",
     "PingHistory",
     "SnmpHistory",
+    "SnmpTrap",
     "SyslogMessage",
     "DiscoveredDevice",
 ]

@@ -85,15 +85,20 @@ export function Dashboard() {
   }, [])
   const addToast = useCallback((kind: 'down' | 'up', dev: Device) => {
     const id = crypto.randomUUID()
-    const critical = kind === 'down' && dev.is_critical
+    // "Susdur" (mute) means SILENCE: a muted device still shows its toast but
+    // never plays a sound — including when it later drops/recovers.
+    const muted = dev.is_muted
+    const critical = kind === 'down' && dev.is_critical && !muted
     const title = kind === 'down'
       ? `⚠ ${dev.vendor_name} DOWN oldu`
       : `✓ ${dev.vendor_name} BƏRPA olundu`
     const detail = `${dev.ip_address}${dev.location_text ? ' · ' + dev.location_text : ''}`
     setToasts(t => [...t, { id, kind, critical, title, detail }])
     // Critical-device down → distinct urgent siren; otherwise standard tones.
-    playAlert(critical ? 'critical' : kind)
-    // Critical alerts stay until acknowledged (quick reaction). Others auto-close after 10s.
+    // Muted devices stay silent.
+    if (!muted) playAlert(critical ? 'critical' : kind)
+    // Critical (non-muted) alerts stay until acknowledged. Everything else — and
+    // anything muted — auto-closes after 10s.
     if (!critical) {
       setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 10_000)
     }
@@ -196,8 +201,8 @@ export function Dashboard() {
         </div>
         <nav style={{ display: 'flex', gap: 2 }}>
           {([
-            ['Devices', '/'],
-            ['Events', '/events'],
+            ['Cihazlar', '/'],
+            ['Loglar', '/events'],
             ...(hasPermission('manage_users') || isManager ? [['⚙ Admin', '/admin']] : []),
           ] as [string, string][]).map(([label, path]) => (
             <button key={label} onClick={() => navigate(path)}
@@ -240,16 +245,16 @@ export function Dashboard() {
       {/* ── Stats bar ──────────────────────────────────────────────────── */}
       <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '14px 20px' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
-          <StatCard label="Total Devices" value={total}   color="#1e293b" />
-          <StatCard label="Online"         value={online}  color="#16a34a" />
-          <StatCard label="Offline"        value={offline} color="#ef4444" />
-          <StatCard label="Unknown"        value={unknown} color="#eab308" />
+          <StatCard label="Ümumi cihaz"   value={total}   color="#1e293b" />
+          <StatCard label="Onlayn"         value={online}  color="#16a34a" />
+          <StatCard label="Oflayn"         value={offline} color="#ef4444" />
+          <StatCard label="Naməlum"        value={unknown} color="#eab308" />
 
           {/* Uptime bar */}
           {total > 0 && (
             <div style={{ flex: '2 1 200px', background: '#f8fafc', borderRadius: 10, padding: '14px 18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Uptime</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>İşləmə vaxtı</span>
                 <span style={{ fontSize: 14, fontWeight: 800, color: uptimePct >= 80 ? '#16a34a' : uptimePct >= 50 ? '#f59e0b' : '#ef4444' }}>
                   {uptimePct}%
                 </span>
@@ -282,14 +287,14 @@ export function Dashboard() {
                 fontFamily: 'inherit',
                 textTransform: 'capitalize',
               }}>
-              {v === 'map' ? '🗺 Map' : v === 'graph' ? '⬡ Graph' : '≡ Table'}
+              {v === 'map' ? '🗺 Xəritə' : v === 'graph' ? '⬡ Qraf' : v === 'table' ? '≡ Cədvəl' : '📊 SLA'}
             </button>
           ))}
         </div>
 
         {/* Search */}
         <input
-          placeholder="Search devices…"
+          placeholder="Cihaz axtar…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{
@@ -302,10 +307,10 @@ export function Dashboard() {
         {/* Status filter */}
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
           style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', background: '#fafafa', cursor: 'pointer' }}>
-          <option value="all">All statuses</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-          <option value="unknown">Unknown</option>
+          <option value="all">Bütün statuslar</option>
+          <option value="online">Onlayn</option>
+          <option value="offline">Oflayn</option>
+          <option value="unknown">Naməlum</option>
         </select>
 
         {/* Region filter */}
@@ -340,7 +345,7 @@ export function Dashboard() {
           {canEdit && !placing && (
             <button onClick={startAdd}
               style={{ background: '#1e40af', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}>
-              + Add Device
+              + Cihaz əlavə et
             </button>
           )}
         </div>
@@ -467,11 +472,11 @@ function EmptyState({ isManager, onAdd }: { isManager: boolean; onAdd: () => voi
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: '#94a3b8' }}>
       <div style={{ fontSize: 48 }}>⬡</div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: '#64748b' }}>No devices yet</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: '#64748b' }}>Hələ cihaz yoxdur</div>
       {isManager && (
         <button onClick={onAdd}
           style={{ background: '#1e40af', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', marginTop: 4 }}>
-          + Add your first device
+          + İlk cihazınızı əlavə edin
         </button>
       )}
     </div>

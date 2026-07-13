@@ -60,11 +60,13 @@ from app.api.routes import (  # noqa: E402
     admin,
     audit,
     auth,
+    device_links,
     devices,
     discovery,
     events,
     monitor,
     sla,
+    snmp_traps,
     syslog,
     ws,
 )
@@ -72,11 +74,13 @@ from app.api.routes import (  # noqa: E402
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(devices.router)
+app.include_router(device_links.router)
 app.include_router(events.router)
 app.include_router(audit.router)
 app.include_router(monitor.router)
 app.include_router(sla.router)
 app.include_router(syslog.router)
+app.include_router(snmp_traps.router)
 app.include_router(discovery.router)
 app.include_router(ws.router)
 

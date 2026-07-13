@@ -156,3 +156,12 @@ class SnmpCheckResult(BaseModel):
     status: str
     detail: str | None = None
     facts: dict | None = None
+
+
+class SnmpInventoryResult(BaseModel):
+    """Comprehensive on-demand SNMP walk returned by POST /{id}/snmp-inventory.
+    `data` is a loose category bag (system/resources/storage/interfaces/sensors/
+    vlans/mac_table/arp/routes/qos/vpn/wireless/ups + meta) — persisted nowhere."""
+    status: str
+    detail: str | None = None
+    data: dict | None = None

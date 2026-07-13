@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
+import { TrafficModal } from './TrafficModal'
+import { SnmpExplorerModal } from './SnmpExplorerModal'
+import { formatBps } from '../lib/format'
 import type { Device, SnmpFacts, SnmpHistoryPoint } from '../types'
 
 // SNMP telemetry panel for the device drawer: system info, CPU/memory gauges,
@@ -12,14 +15,6 @@ const SNMP_STATUS: Record<string, { label: string; color: string }> = {
   timeout: { label: 'Cavab vermir', color: '#ef4444' },
   error:   { label: 'Xəta',        color: '#f59e0b' },
   unknown: { label: 'Yoxlanmayıb', color: '#94a3b8' },
-}
-
-export function formatBps(bps: number | null | undefined): string {
-  if (bps == null) return '—'
-  if (bps >= 1e9) return (bps / 1e9).toFixed(1) + ' Gb/s'
-  if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' Mb/s'
-  if (bps >= 1e3) return (bps / 1e3).toFixed(1) + ' kb/s'
-  return Math.round(bps) + ' b/s'
 }
 
 function Gauge({ label, value }: { label: string; value: number | null | undefined }) {
@@ -156,6 +151,8 @@ const LIVE_INTERVAL_MS = 5_000
 export function SnmpPanel({ device, canPoll }: Props) {
   const qc = useQueryClient()
   const [live, setLive] = useState(false)
+  const [showTraffic, setShowTraffic] = useState(false)
+  const [showExplorer, setShowExplorer] = useState(false)
   const snmpM = useMutation({
     mutationFn: (id: string) => devicesApi.snmpCheck(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }); qc.invalidateQueries({ queryKey: ['device-snmp-history'] }) },
@@ -193,6 +190,22 @@ export function SnmpPanel({ device, canPoll }: Props) {
         <span style={{ fontSize: 12, fontWeight: 700, color: st.color }}>● {st.label}</span>
       </div>
 
+      {canPoll && (
+        <button
+          onClick={() => setShowExplorer(true)}
+          title="Bütün SNMP məlumatlarını tam ekran kəşfiyyat panelində aç"
+          style={{
+            width: '100%', marginBottom: 8, padding: '9px', borderRadius: 8, cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
+            border: '1px solid #0e7490', color: '#ecfeff',
+            background: 'linear-gradient(180deg,#0f172a,#0e7490)',
+            boxShadow: '0 0 0 1px rgba(34,211,238,0.10), 0 6px 18px rgba(14,116,144,0.28)',
+          }}
+        >
+          🛰 SNMP Kəşfiyyatı — tam telemetriya
+        </button>
+      )}
+
       <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: 8, padding: '10px 13px', fontSize: 13 }}>
         {[
           ['Sistem adı', facts?.sys_name],
@@ -218,7 +231,16 @@ export function SnmpPanel({ device, canPoll }: Props) {
 
         {ifaces.length > 0 && (
           <div style={{ marginTop: 6 }}>
-            <div style={{ color: '#64748b', marginBottom: 4 }}>İnterfeyslər</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ color: '#64748b' }}>İnterfeyslər</span>
+              <button
+                onClick={() => setShowTraffic(true)}
+                title="Trafik monitoru — hər portu ayrıca canlı izlə"
+                style={{ padding: '2px 9px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit', border: '1px solid #0ea5b7', background: 'linear-gradient(180deg,#0f766e,#0e7490)', color: '#ecfeff' }}
+              >
+                ⤢ Trafik monitoru
+              </button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '3px 8px', fontFamily: 'monospace', fontSize: 11, alignItems: 'center' }}>
               <span style={{ color: '#94a3b8', fontFamily: 'inherit' }} />
               <span style={{ color: '#94a3b8' }}>ad</span>
@@ -262,6 +284,13 @@ export function SnmpPanel({ device, canPoll }: Props) {
       )}
 
       <SnmpChart deviceId={device.id} />
+
+      {showTraffic && (
+        <TrafficModal device={device} canPoll={canPoll} onClose={() => setShowTraffic(false)} />
+      )}
+      {showExplorer && (
+        <SnmpExplorerModal device={device} onClose={() => setShowExplorer(false)} />
+      )}
     </div>
   )
 }

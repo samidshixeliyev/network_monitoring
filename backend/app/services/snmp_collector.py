@@ -66,9 +66,102 @@ OID_NOKIA_CPU = "1.3.6.1.4.1.6527.3.1.2.1.1.1.0"       # sgiCpuUsage (%)
 OID_NOKIA_MEM_USED = "1.3.6.1.4.1.6527.3.1.2.1.1.9.0"   # sgiMemoryUsed (bytes)
 OID_NOKIA_MEM_AVAIL = "1.3.6.1.4.1.6527.3.1.2.1.1.10.0"  # sgiMemoryAvailable
 
+# ── Comprehensive inventory OIDs (on-demand full SNMP walk) ───────────────────
+# System / identity
+OID_SYS_OBJECT_ID = "1.3.6.1.2.1.1.2.0"
+OID_SYS_CONTACT = "1.3.6.1.2.1.1.4.0"
+OID_SYS_LOCATION = "1.3.6.1.2.1.1.6.0"
+# ENTITY-MIB entPhysicalTable — model / serial / revisions (chassis row = class 3)
+OID_ENT_DESCR = "1.3.6.1.2.1.47.1.1.1.1.2"
+OID_ENT_CLASS = "1.3.6.1.2.1.47.1.1.1.1.5"
+OID_ENT_NAME = "1.3.6.1.2.1.47.1.1.1.1.7"
+OID_ENT_HW_REV = "1.3.6.1.2.1.47.1.1.1.1.8"
+OID_ENT_FW_REV = "1.3.6.1.2.1.47.1.1.1.1.9"
+OID_ENT_SW_REV = "1.3.6.1.2.1.47.1.1.1.1.10"
+OID_ENT_SERIAL = "1.3.6.1.2.1.47.1.1.1.1.11"
+OID_ENT_MODEL = "1.3.6.1.2.1.47.1.1.1.1.13"
+# HOST-RESOURCES storage type (classify disk vs ram)
+OID_HR_STORAGE_TYPE = "1.3.6.1.2.1.25.2.3.1.2"
+OID_HR_TYPE_FIXED_DISK = "1.3.6.1.2.1.25.2.1.4"
+OID_HR_TYPE_RAM = "1.3.6.1.2.1.25.2.1.2"
+# IF-MIB extras (rich interface table)
+OID_IF_TYPE = "1.3.6.1.2.1.2.2.1.3"
+OID_IF_MTU = "1.3.6.1.2.1.2.2.1.4"
+OID_IF_PHYS = "1.3.6.1.2.1.2.2.1.6"           # MAC
+OID_IF_ADMIN_STATUS = "1.3.6.1.2.1.2.2.1.7"
+OID_IF_IN_DISCARDS = "1.3.6.1.2.1.2.2.1.13"
+OID_IF_IN_ERRORS = "1.3.6.1.2.1.2.2.1.14"
+OID_IF_OUT_DISCARDS = "1.3.6.1.2.1.2.2.1.19"
+OID_IF_OUT_ERRORS = "1.3.6.1.2.1.2.2.1.20"
+OID_IF_ALIAS = "1.3.6.1.2.1.31.1.1.1.18"
+# ENTITY-SENSOR-MIB (temperature / fan / voltage / power)
+OID_SENSOR_TYPE = "1.3.6.1.2.1.99.1.1.1.1"
+OID_SENSOR_SCALE = "1.3.6.1.2.1.99.1.1.1.2"
+OID_SENSOR_PRECISION = "1.3.6.1.2.1.99.1.1.1.3"
+OID_SENSOR_VALUE = "1.3.6.1.2.1.99.1.1.1.4"
+OID_SENSOR_STATUS = "1.3.6.1.2.1.99.1.1.1.5"
+OID_SENSOR_UNITS = "1.3.6.1.2.1.99.1.1.1.6"
+# Cisco CISCO-ENVMON-MIB fallback (temperature / fan / power supply state)
+OID_CENV_TEMP_DESCR = "1.3.6.1.4.1.9.9.13.1.3.1.2"
+OID_CENV_TEMP_VALUE = "1.3.6.1.4.1.9.9.13.1.3.1.3"
+OID_CENV_TEMP_STATE = "1.3.6.1.4.1.9.9.13.1.3.1.6"
+OID_CENV_FAN_DESCR = "1.3.6.1.4.1.9.9.13.1.4.1.2"
+OID_CENV_FAN_STATE = "1.3.6.1.4.1.9.9.13.1.4.1.3"
+OID_CENV_SUPPLY_DESCR = "1.3.6.1.4.1.9.9.13.1.5.1.2"
+OID_CENV_SUPPLY_STATE = "1.3.6.1.4.1.9.9.13.1.5.1.3"
+# VLANs
+OID_DOT1Q_VLAN_NAME = "1.3.6.1.2.1.17.7.1.4.3.1.1"        # dot1qVlanStaticName
+OID_CISCO_VTP_VLAN_NAME = "1.3.6.1.4.1.9.9.46.1.3.1.1.4"  # vtpVlanName
+# MAC / forwarding database
+OID_DOT1Q_FDB_PORT = "1.3.6.1.2.1.17.7.1.2.2.1.2"         # index = vlan.mac(6)
+OID_DOT1D_FDB_PORT = "1.3.6.1.2.1.17.4.3.1.2"             # index = mac(6)
+OID_DOT1D_BASE_PORT_IF = "1.3.6.1.2.1.17.1.4.1.2"         # bridge port → ifIndex
+# ARP / neighbour cache (ipNetToMediaTable — universally implemented)
+OID_ARP_PHYS = "1.3.6.1.2.1.4.22.1.2"                    # index = ifIndex.a.b.c.d
+# Routing (ipCidrRouteTable primary, ipRouteTable fallback)
+OID_IPCIDR_ROUTE_IFINDEX = "1.3.6.1.2.1.4.24.4.1.5"       # index = dest.mask.tos.nexthop
+OID_IPCIDR_ROUTE_TYPE = "1.3.6.1.2.1.4.24.4.1.6"
+OID_IPCIDR_ROUTE_PROTO = "1.3.6.1.2.1.4.24.4.1.7"
+OID_IPROUTE_IFINDEX = "1.3.6.1.2.1.4.21.1.2"             # index = dest ip
+OID_IPROUTE_NEXTHOP = "1.3.6.1.2.1.4.21.1.7"
+OID_IPROUTE_MASK = "1.3.6.1.2.1.4.21.1.11"
+# UPS-MIB (RFC1628)
+OID_UPS_BATTERY_STATUS = "1.3.6.1.2.1.33.1.2.1.0"
+OID_UPS_SECONDS_ON_BATT = "1.3.6.1.2.1.33.1.2.2.0"
+OID_UPS_MINUTES_REMAIN = "1.3.6.1.2.1.33.1.2.3.0"
+OID_UPS_CHARGE_PCT = "1.3.6.1.2.1.33.1.2.4.0"
+OID_UPS_OUT_LOAD = "1.3.6.1.2.1.33.1.4.4.1.5"            # walk (per output line)
+OID_UPS_IN_VOLTAGE = "1.3.6.1.2.1.33.1.3.3.1.3"          # walk
+OID_UPS_OUT_VOLTAGE = "1.3.6.1.2.1.33.1.4.4.1.2"         # walk
+# QoS / VPN / Wireless — best-effort name walks (vendor-specific; often empty)
+OID_CBQOS_POLICYMAP_NAME = "1.3.6.1.4.1.9.9.166.1.6.1.1.1"  # cbQosPolicyMapName
+OID_CBQOS_CM_NAME = "1.3.6.1.4.1.9.9.166.1.7.1.1.1"         # cbQosCMName
+OID_IPSEC_TUN_PEER = "1.3.6.1.4.1.9.9.171.1.3.2.1.4"        # cipSecTunRemoteAddr
+OID_IPSEC_TUN_STATUS = "1.3.6.1.4.1.9.9.171.1.3.2.1.14"     # cipSecTunStatus
+OID_CISCO_AP_NAME = "1.3.6.1.4.1.9.9.513.1.1.1.1.5"         # cLApName (Cisco unified AP)
+
+# Enterprise number → vendor label (from sysObjectID 1.3.6.1.4.1.<n>...).
+_ENTERPRISE_VENDORS = {
+    9: "Cisco", 2636: "Juniper", 6527: "Nokia", 2011: "Huawei",
+    8072: "Net-SNMP", 11: "HP", 14988: "MikroTik", 30065: "Arista",
+    2352: "Redback", 25506: "H3C", 12356: "Fortinet", 1991: "Foundry",
+}
+
+# ENTITY-SENSOR EntitySensorDataType → coarse sensor category.
+_SENSOR_KIND = {
+    3: "power", 4: "power", 5: "power", 6: "power",  # voltsAC/voltsDC/amperes/watts
+    8: "temperature", 10: "fan",                     # celsius / rpm
+}
+_SENSOR_UNIT = {3: "VAC", 4: "VDC", 5: "A", 6: "W", 7: "Hz", 8: "°C", 9: "%RH", 10: "RPM"}
+
 # Last-seen interface counters per device, for rate computation between polls:
 # {device_id: {"t": monotonic, "if": {ifindex: (in_octets, out_octets)}}}
+# Both dicts are keyed by device_id, so bounded by the device count.
 _last_counters: dict[uuid.UUID, dict] = {}
+# Separate delta chain for the live traffic modal's peeks, so its ~1×/s polls
+# never overwrite the background loop's last snapshot (which would corrupt the
+# persisted in_bps/out_bps of the next scheduled poll).
+_peek_counters: dict[uuid.UUID, dict] = {}
 
 
 def _format_uptime(ticks: int) -> str:
@@ -141,9 +234,22 @@ class _Snmp:
 
             auth_proto, priv_proto = _v3_protocols(v3_auth_proto, v3_priv_proto)
             kwargs: dict = {}
-            if v3_auth_proto != "none" and v3_auth_key:
+            # A requested auth/priv protocol with no matching key must FAIL loudly:
+            # silently dropping to noAuthNoPriv would make an authPriv-only agent
+            # reject us with a bare timeout, hiding the real cause (missing key).
+            if v3_auth_proto != "none":
+                if not v3_auth_key:
+                    raise ValueError(
+                        f"SNMPv3 user {v3_user!r} requests auth '{v3_auth_proto}' "
+                        "but no auth key is configured"
+                    )
                 kwargs = {"authKey": v3_auth_key, "authProtocol": auth_proto}
-                if v3_priv_proto != "none" and v3_priv_key:
+                if v3_priv_proto != "none":
+                    if not v3_priv_key:
+                        raise ValueError(
+                            f"SNMPv3 user {v3_user!r} requests priv '{v3_priv_proto}' "
+                            "but no priv key is configured"
+                        )
                     kwargs |= {"privKey": v3_priv_key, "privProtocol": priv_proto}
             self.engine = SnmpEngine()
             self.auth = UsmUserData(v3_user, **kwargs)
@@ -213,6 +319,32 @@ class _Snmp:
                 if not oid.startswith(base_oid + "."):
                     return out
                 out[int(oid.rsplit(".", 1)[1])] = value
+        return out
+
+    async def walk_full(self, base_oid: str, *, max_rows: int | None = None) -> dict[str, object]:
+        """WALK a subtree keeping the FULL index suffix (the dotted remainder
+        after base_oid). Multi-part table indexes — ARP (ifIndex.a.b.c.d),
+        routing (dest.mask.tos.nexthop), FDB (vlan.mac), sensors — can't be
+        keyed by a single trailing integer like walk() does. Optionally stops
+        after max_rows to bound huge tables (routing/FDB)."""
+        hlapi = self._hlapi()
+        out: dict[str, object] = {}
+        prefix = base_oid + "."
+        async for err_ind, err_status, _err_idx, var_binds in hlapi.walk_cmd(
+            *await self._cmd_args(),
+            hlapi.ObjectType(hlapi.ObjectIdentity(base_oid)),
+        ):
+            if err_ind:
+                raise TimeoutError(str(err_ind))
+            if err_status:
+                raise RuntimeError(err_status.prettyPrint())
+            for name, value in var_binds:
+                oid = str(name)
+                if not oid.startswith(prefix):
+                    return out
+                out[oid[len(prefix):]] = value
+            if max_rows is not None and len(out) >= max_rows:
+                return out
         return out
 
     def close(self) -> None:
@@ -290,9 +422,17 @@ async def _vendor_mem(snmp: "_Snmp") -> float | None:
     return None
 
 
-async def _run_collection(device_id: uuid.UUID, snmp: _Snmp) -> dict:
+async def _run_collection(
+    device_id: uuid.UUID, snmp: _Snmp, counters: dict | None = None
+) -> dict:
     """Poll one device. Returns {facts, cpu, mem, in_bps, out_bps}. Raises on
-    timeout/SNMP errors."""
+    timeout/SNMP errors.
+
+    `counters` is the rate-delta store to advance (see _last_counters). The live
+    traffic modal passes its OWN store so its ~1×/s peeks don't overwrite the
+    background poll loop's last-sample snapshot and corrupt persisted rates."""
+    if counters is None:
+        counters = _last_counters
     try:
         sys_vals = await snmp.get(OID_SYS_DESCR, OID_SYS_UPTIME, OID_SYS_NAME)
 
@@ -323,34 +463,42 @@ async def _run_collection(device_id: uuid.UUID, snmp: _Snmp) -> dict:
         if mem is None:
             mem = await _vendor_mem(snmp)
 
-        # Interfaces: names + oper status + counters (prefer 64-bit HC).
-        if_descr = await snmp.walk(OID_IF_DESCR)
-        if_oper = await snmp.walk(OID_IF_OPER_STATUS)
-        try:
-            if_names = await snmp.walk(OID_IF_NAME)
-        except Exception:  # noqa: BLE001
+        # Interfaces: names + oper status + counters (prefer 64-bit HC). These
+        # walks are independent, so run them concurrently — the engine multiplexes
+        # by request-id, and this hot path also backs the ~1×/s traffic modal, so
+        # overlapping the round-trips keeps the live poll snappy. descr/oper are
+        # required (their exception classifies the whole poll); the rest tolerate
+        # failure, exactly as the sequential version did.
+        if_descr, if_oper, if_names, hc_in, hc_out, speeds = await asyncio.gather(
+            snmp.walk(OID_IF_DESCR),
+            snmp.walk(OID_IF_OPER_STATUS),
+            snmp.walk(OID_IF_NAME),
+            snmp.walk(OID_IF_HC_IN),
+            snmp.walk(OID_IF_HC_OUT),
+            snmp.walk(OID_IF_HIGH_SPEED),  # Mbps
+            return_exceptions=True,
+        )
+        if isinstance(if_descr, BaseException):
+            raise if_descr
+        if isinstance(if_oper, BaseException):
+            raise if_oper
+        if isinstance(if_names, BaseException):
             if_names = {}
-        in_octets = out_octets = {}
+        in_octets = {} if isinstance(hc_in, BaseException) else hc_in
+        out_octets = {} if isinstance(hc_out, BaseException) else hc_out
         hc = True
-        try:
-            in_octets = await snmp.walk(OID_IF_HC_IN)
-            out_octets = await snmp.walk(OID_IF_HC_OUT)
-        except Exception:  # noqa: BLE001
-            pass
-        if not in_octets:
+        if not in_octets:  # no HC counters — fall back to 32-bit ifInOctets
             hc = False
             in_octets = await snmp.walk(OID_IF_IN_OCTETS)
             out_octets = await snmp.walk(OID_IF_OUT_OCTETS)
-        try:
-            speeds = await snmp.walk(OID_IF_HIGH_SPEED)  # Mbps
-        except Exception:  # noqa: BLE001
+        if isinstance(speeds, BaseException):
             speeds = {}
     finally:
         snmp.close()
 
     # ── Rates from counter deltas ────────────────────────────────────────────
     now_mono = time.monotonic()
-    prev = _last_counters.get(device_id)
+    prev = counters.get(device_id)
     rates: dict[int, tuple[float, float]] = {}
     if prev and prev.get("hc") == hc:
         dt = now_mono - prev["t"]
@@ -363,7 +511,7 @@ async def _run_collection(device_id: uuid.UUID, snmp: _Snmp) -> dict:
                 d_in = (int(in_octets[idx]) - p_in) % wrap
                 d_out = (int(out_octets.get(idx, 0)) - p_out) % wrap
                 rates[idx] = (d_in * 8 / dt, d_out * 8 / dt)
-    _last_counters[device_id] = {
+    counters[device_id] = {
         "t": now_mono,
         "hc": hc,
         "if": {i: (int(in_octets[i]), int(out_octets.get(i, 0))) for i in in_octets},
@@ -421,22 +569,22 @@ async def collect_device(device_id: uuid.UUID) -> dict | None:
             missing = "snmp_v3_user" if is_v3 else "snmp_community"
             return {"status": "error", "detail": f"no {missing} set"}
 
-        snmp = _Snmp(
-            str(device.ip_address),
-            device.snmp_port or 161,
-            community=None if is_v3 else device.snmp_community,
-            v3_user=device.snmp_v3_user if is_v3 else None,
-            v3_auth_proto=device.snmp_v3_auth_proto or "sha",
-            v3_auth_key=device.snmp_v3_auth_key,
-            v3_priv_proto=device.snmp_v3_priv_proto or "aes",
-            v3_priv_key=device.snmp_v3_priv_key,
-        )
         host = str(device.ip_address)
 
         status = "ok"
         detail = None
         result: dict | None = None
         try:
+            snmp = _Snmp(
+                host,
+                device.snmp_port or 161,
+                community=None if is_v3 else device.snmp_community,
+                v3_user=device.snmp_v3_user if is_v3 else None,
+                v3_auth_proto=device.snmp_v3_auth_proto or "sha",
+                v3_auth_key=device.snmp_v3_auth_key,
+                v3_priv_proto=device.snmp_v3_priv_proto or "aes",
+                v3_priv_key=device.snmp_v3_priv_key,
+            )
             result = await _run_collection(device.id, snmp)
         except Exception as exc:  # noqa: BLE001 — classify
             status = "timeout" if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) else "error"
@@ -463,6 +611,473 @@ async def collect_device(device_id: uuid.UUID) -> dict | None:
         await state_cache.upsert_device(serialize_device(device))
 
         return {"status": status, "detail": detail, **({"facts": result["facts"]} if result else {})}
+
+
+async def peek_device(device_id: uuid.UUID, device: Device | None = None) -> dict | None:
+    """Poll a device over SNMP and return facts WITHOUT persisting anything —
+    no history sample, no audit, no cache/DB write. Backs the live traffic
+    modal, which polls ~1×/s: persisting every one of those would flood the
+    audit log and snmp_history. Rates stay correct because _run_collection
+    advances the in-memory _peek_counters delta chain (kept separate from the
+    background loop's _last_counters so the two never corrupt each other).
+
+    `device`, when the caller has already loaded and validated it (the snmp-peek
+    route does), is reused to avoid a redundant DB round-trip on this hot path.
+
+    Returns {status, detail?, facts?} or None if SNMP isn't configured."""
+    if device is None:
+        async with AsyncSessionLocal() as session:
+            device = await session.get(Device, device_id)
+    if device is None or not device.snmp_enabled:
+        return None
+    is_v3 = device.snmp_version == "3"
+    if (is_v3 and not device.snmp_v3_user) or (not is_v3 and not device.snmp_community):
+        return {"status": "error", "detail": "SNMP credentials not set"}
+
+    try:
+        snmp = _Snmp(
+            str(device.ip_address),
+            device.snmp_port or 161,
+            community=None if is_v3 else device.snmp_community,
+            v3_user=device.snmp_v3_user if is_v3 else None,
+            v3_auth_proto=device.snmp_v3_auth_proto or "sha",
+            v3_auth_key=device.snmp_v3_auth_key,
+            v3_priv_proto=device.snmp_v3_priv_proto or "aes",
+            v3_priv_key=device.snmp_v3_priv_key,
+        )
+        result = await _run_collection(device.id, snmp, counters=_peek_counters)
+    except Exception as exc:  # noqa: BLE001 — classify like collect_device
+        status = "timeout" if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) else "error"
+        return {"status": status, "detail": f"{type(exc).__name__}: {exc}"}
+    return {"status": "ok", "detail": None, "facts": result["facts"]}
+
+
+# ── Comprehensive inventory (on-demand full SNMP walk) ───────────────────────
+# Value-decode helpers (pysnmp objects → plain JSON-able Python).
+def _as_int(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_str(value: object) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _mac(value: object) -> str | None:
+    """OctetString (ifPhysAddress / neighbour PhysAddress) → aa:bb:cc:dd:ee:ff."""
+    try:
+        raw = bytes(value.asOctets())  # type: ignore[attr-defined]
+    except (AttributeError, TypeError):
+        return None
+    if not raw or len(raw) > 8:
+        return None
+    return ":".join(f"{b:02x}" for b in raw)
+
+
+def _vendor_from_oid(oid: str | None) -> str | None:
+    parts = (oid or "").split(".")
+    if len(parts) >= 7 and parts[:6] == ["1", "3", "6", "1", "4", "1"]:
+        try:
+            return _ENTERPRISE_VENDORS.get(int(parts[6]))
+        except ValueError:
+            return None
+    return None
+
+
+def _prefix_len(mask_octets: list[str]) -> int:
+    try:
+        return sum(bin(int(o)).count("1") for o in mask_octets)
+    except ValueError:
+        return 0
+
+
+async def _safe_walk(snmp: _Snmp, oid: str) -> dict[int, object]:
+    try:
+        return await snmp.walk(oid)
+    except Exception:  # noqa: BLE001 — optional column
+        return {}
+
+
+async def _safe_walk_full(snmp: _Snmp, oid: str, max_rows: int | None = None) -> dict[str, object]:
+    try:
+        return await snmp.walk_full(oid, max_rows=max_rows)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+async def _inv_system(snmp: _Snmp) -> dict:
+    scalars = await snmp.get(
+        OID_SYS_NAME, OID_SYS_DESCR, OID_SYS_UPTIME, OID_SYS_OBJECT_ID,
+        OID_SYS_CONTACT, OID_SYS_LOCATION,
+    )
+    uptime = scalars.get(OID_SYS_UPTIME)
+    sys_obj = _as_str(scalars.get(OID_SYS_OBJECT_ID))
+    out = {
+        "sys_name": _as_str(scalars.get(OID_SYS_NAME)),
+        "sys_descr": (_as_str(scalars.get(OID_SYS_DESCR)) or "")[:500] or None,
+        "uptime": _format_uptime(int(uptime)) if uptime is not None else None,
+        "contact": _as_str(scalars.get(OID_SYS_CONTACT)),
+        "location": _as_str(scalars.get(OID_SYS_LOCATION)),
+        "vendor": _vendor_from_oid(sys_obj),
+        "object_id": sys_obj,
+        "model": None, "serial": None,
+        "hardware_rev": None, "firmware_rev": None, "software_rev": None,
+    }
+    # ENTITY-MIB chassis row → model / serial / revisions.
+    classes = await _safe_walk(snmp, OID_ENT_CLASS)
+    models = await _safe_walk(snmp, OID_ENT_MODEL)
+    serials = await _safe_walk(snmp, OID_ENT_SERIAL)
+    chassis = [i for i, c in classes.items() if _as_int(c) == 3]
+    idx = chassis[0] if chassis else (next(iter(serials), None) or next(iter(models), None))
+    if idx is not None:
+        out["model"] = _as_str(models.get(idx))
+        out["serial"] = _as_str(serials.get(idx))
+        out["hardware_rev"] = _as_str((await _safe_walk(snmp, OID_ENT_HW_REV)).get(idx))
+        out["software_rev"] = _as_str((await _safe_walk(snmp, OID_ENT_SW_REV)).get(idx))
+        out["firmware_rev"] = _as_str((await _safe_walk(snmp, OID_ENT_FW_REV)).get(idx))
+    return out
+
+
+async def _inv_resources(snmp: _Snmp) -> dict:
+    cpu: float | None = None
+    cores: list[int] = []
+    try:
+        loads = await snmp.walk(OID_HR_CPU_LOAD)
+        cores = [c for c in (_as_int(v) for v in loads.values()) if c is not None]
+        if cores:
+            cpu = round(sum(cores) / len(cores), 1)
+    except Exception:  # noqa: BLE001
+        pass
+    if cpu is None:
+        cpu = await _vendor_cpu(snmp)
+    mem: float | None = None
+    try:
+        descrs = await snmp.walk(OID_HR_STORAGE_DESCR)
+        if descrs:
+            mem = _mem_percent(
+                descrs,
+                await snmp.walk(OID_HR_STORAGE_UNITS),
+                await snmp.walk(OID_HR_STORAGE_SIZE),
+                await snmp.walk(OID_HR_STORAGE_USED),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+    if mem is None:
+        mem = await _vendor_mem(snmp)
+    return {"cpu_percent": cpu, "cores": cores, "mem_percent": mem}
+
+
+async def _inv_storage(snmp: _Snmp) -> list[dict]:
+    descrs = await snmp.walk(OID_HR_STORAGE_DESCR)
+    if not descrs:
+        return []
+    types = await _safe_walk(snmp, OID_HR_STORAGE_TYPE)
+    units = await _safe_walk(snmp, OID_HR_STORAGE_UNITS)
+    sizes = await _safe_walk(snmp, OID_HR_STORAGE_SIZE)
+    useds = await _safe_walk(snmp, OID_HR_STORAGE_USED)
+    out = []
+    for idx, descr in sorted(descrs.items()):
+        size = _as_int(sizes.get(idx))
+        if size is None:
+            continue
+        unit = _as_int(units.get(idx)) or 1
+        used = _as_int(useds.get(idx)) or 0
+        type_oid = _as_str(types.get(idx)) or ""
+        kind = "disk" if type_oid == OID_HR_TYPE_FIXED_DISK else "ram" if type_oid == OID_HR_TYPE_RAM else "other"
+        size_b, used_b = size * unit, used * unit
+        out.append({
+            "descr": _as_str(descr), "kind": kind,
+            "size_bytes": size_b, "used_bytes": used_b,
+            "pct": round(used_b / size_b * 100, 1) if size_b > 0 else None,
+        })
+    return out
+
+
+async def _inv_interfaces(snmp: _Snmp) -> list[dict]:
+    descrs = await snmp.walk(OID_IF_DESCR)
+    if not descrs:
+        return []
+    names = await _safe_walk(snmp, OID_IF_NAME)
+    aliases = await _safe_walk(snmp, OID_IF_ALIAS)
+    oper = await _safe_walk(snmp, OID_IF_OPER_STATUS)
+    admin = await _safe_walk(snmp, OID_IF_ADMIN_STATUS)
+    types = await _safe_walk(snmp, OID_IF_TYPE)
+    mtus = await _safe_walk(snmp, OID_IF_MTU)
+    macs = await _safe_walk(snmp, OID_IF_PHYS)
+    speeds = await _safe_walk(snmp, OID_IF_HIGH_SPEED)
+    in_err = await _safe_walk(snmp, OID_IF_IN_ERRORS)
+    out_err = await _safe_walk(snmp, OID_IF_OUT_ERRORS)
+    in_disc = await _safe_walk(snmp, OID_IF_IN_DISCARDS)
+    out_disc = await _safe_walk(snmp, OID_IF_OUT_DISCARDS)
+    out = []
+    for idx in sorted(descrs):
+        out.append({
+            "index": idx,
+            "name": _as_str(names.get(idx)) or _as_str(descrs.get(idx)),
+            "descr": _as_str(descrs.get(idx)),
+            "alias": _as_str(aliases.get(idx)),
+            "oper": "up" if _as_int(oper.get(idx)) == 1 else "down",
+            "admin": "up" if _as_int(admin.get(idx)) == 1 else "down",
+            "type": _as_int(types.get(idx)),
+            "mtu": _as_int(mtus.get(idx)),
+            "mac": _mac(macs.get(idx)),
+            "speed_mbps": _as_int(speeds.get(idx)),
+            "in_errors": _as_int(in_err.get(idx)),
+            "out_errors": _as_int(out_err.get(idx)),
+            "in_discards": _as_int(in_disc.get(idx)),
+            "out_discards": _as_int(out_disc.get(idx)),
+        })
+    return out
+
+
+async def _inv_sensors(snmp: _Snmp) -> list[dict]:
+    out: list[dict] = []
+    types = await _safe_walk(snmp, OID_SENSOR_TYPE)
+    if types:
+        values = await _safe_walk(snmp, OID_SENSOR_VALUE)
+        precisions = await _safe_walk(snmp, OID_SENSOR_PRECISION)
+        statuses = await _safe_walk(snmp, OID_SENSOR_STATUS)
+        units = await _safe_walk(snmp, OID_SENSOR_UNITS)
+        names = await _safe_walk(snmp, OID_ENT_NAME)
+        for idx, t in sorted(types.items()):
+            raw = _as_int(values.get(idx))
+            if raw is None:
+                continue
+            tv = _as_int(t) or 0
+            prec = _as_int(precisions.get(idx)) or 0
+            val = raw / (10 ** prec) if prec else float(raw)
+            out.append({
+                "name": _as_str(names.get(idx)) or f"sensor {idx}",
+                "kind": _SENSOR_KIND.get(tv, "other"),
+                "value": round(val, 2),
+                "unit": _as_str(units.get(idx)) or _SENSOR_UNIT.get(tv),
+                "status": "ok" if _as_int(statuses.get(idx)) == 1 else "warn",
+            })
+        if out:
+            return out
+    # Cisco CISCO-ENVMON-MIB fallback.
+    for descr_oid, val_oid, state_oid, kind, unit in (
+        (OID_CENV_TEMP_DESCR, OID_CENV_TEMP_VALUE, OID_CENV_TEMP_STATE, "temperature", "°C"),
+        (OID_CENV_FAN_DESCR, None, OID_CENV_FAN_STATE, "fan", None),
+        (OID_CENV_SUPPLY_DESCR, None, OID_CENV_SUPPLY_STATE, "power", None),
+    ):
+        descrs = await _safe_walk(snmp, descr_oid)
+        vals = await _safe_walk(snmp, val_oid) if val_oid else {}
+        states = await _safe_walk(snmp, state_oid)
+        for i, d in sorted(descrs.items()):
+            out.append({
+                "name": _as_str(d), "kind": kind,
+                "value": _as_int(vals.get(i)) if val_oid else None, "unit": unit,
+                "status": "ok" if _as_int(states.get(i)) == 1 else "warn",
+            })
+    return out
+
+
+async def _inv_vlans(snmp: _Snmp) -> list[dict]:
+    names = await _safe_walk(snmp, OID_DOT1Q_VLAN_NAME) or await _safe_walk(snmp, OID_CISCO_VTP_VLAN_NAME)
+    return [{"id": idx, "name": _as_str(name)} for idx, name in sorted(names.items())]
+
+
+async def _inv_mac_table(snmp: _Snmp, max_rows: int = 1000) -> list[dict]:
+    base_if = await _safe_walk(snmp, OID_DOT1D_BASE_PORT_IF)
+    out: list[dict] = []
+    q = await _safe_walk_full(snmp, OID_DOT1Q_FDB_PORT, max_rows)
+    if q:
+        for suffix, port in q.items():
+            parts = suffix.split(".")
+            if len(parts) < 7:
+                continue
+            bport = _as_int(port)
+            out.append({
+                "vlan": int(parts[0]),
+                "mac": ":".join(f"{int(p):02x}" for p in parts[1:7]),
+                "port": bport,
+                "ifindex": _as_int(base_if.get(bport)) if bport else None,
+            })
+        return out
+    d = await _safe_walk_full(snmp, OID_DOT1D_FDB_PORT, max_rows)
+    for suffix, port in d.items():
+        parts = suffix.split(".")
+        if len(parts) < 6:
+            continue
+        bport = _as_int(port)
+        out.append({
+            "vlan": None,
+            "mac": ":".join(f"{int(p):02x}" for p in parts[0:6]),
+            "port": bport,
+            "ifindex": _as_int(base_if.get(bport)) if bport else None,
+        })
+    return out
+
+
+async def _inv_arp(snmp: _Snmp, max_rows: int = 1000) -> list[dict]:
+    phys = await _safe_walk_full(snmp, OID_ARP_PHYS, max_rows)
+    out = []
+    for suffix, val in phys.items():
+        parts = suffix.split(".")
+        if len(parts) < 5:
+            continue
+        mac = _mac(val)
+        if mac:
+            out.append({"ip": ".".join(parts[1:5]), "mac": mac, "ifindex": int(parts[0])})
+    return out
+
+
+async def _inv_routes(snmp: _Snmp, max_rows: int = 500) -> list[dict]:
+    out: list[dict] = []
+    ifidx = await _safe_walk_full(snmp, OID_IPCIDR_ROUTE_IFINDEX, max_rows)
+    if ifidx:
+        protos = await _safe_walk_full(snmp, OID_IPCIDR_ROUTE_PROTO, max_rows)
+        for suffix, iface in ifidx.items():
+            parts = suffix.split(".")
+            if len(parts) < 13:
+                continue
+            out.append({
+                "dest": f"{'.'.join(parts[0:4])}/{_prefix_len(parts[4:8])}",
+                "nexthop": ".".join(parts[9:13]),
+                "ifindex": _as_int(iface),
+                "proto": _as_int(protos.get(suffix)),
+            })
+        return out
+    ifidx = await _safe_walk_full(snmp, OID_IPROUTE_IFINDEX, max_rows)
+    nexthops = await _safe_walk_full(snmp, OID_IPROUTE_NEXTHOP, max_rows)
+    masks = await _safe_walk_full(snmp, OID_IPROUTE_MASK, max_rows)
+    for suffix, iface in ifidx.items():
+        mask = _as_str(masks.get(suffix))
+        plen = _prefix_len(mask.split(".")) if mask else None
+        out.append({
+            "dest": f"{suffix}/{plen}" if plen is not None else suffix,
+            "nexthop": _as_str(nexthops.get(suffix)),
+            "ifindex": _as_int(iface),
+            "proto": None,
+        })
+    return out
+
+
+async def _inv_ups(snmp: _Snmp) -> dict | None:
+    try:
+        scalars = await snmp.get(
+            OID_UPS_BATTERY_STATUS, OID_UPS_MINUTES_REMAIN,
+            OID_UPS_CHARGE_PCT, OID_UPS_SECONDS_ON_BATT,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if not scalars:
+        return None
+    battery_map = {1: "unknown", 2: "normal", 3: "low", 4: "depleted"}
+    loads = await _safe_walk(snmp, OID_UPS_OUT_LOAD)
+    in_v = await _safe_walk(snmp, OID_UPS_IN_VOLTAGE)
+    out_v = await _safe_walk(snmp, OID_UPS_OUT_VOLTAGE)
+    first = lambda w: next((v for v in (_as_int(x) for x in w.values()) if v is not None), None)  # noqa: E731
+    return {
+        "battery_status": battery_map.get(_as_int(scalars.get(OID_UPS_BATTERY_STATUS)) or 1, "unknown"),
+        "charge_pct": _as_int(scalars.get(OID_UPS_CHARGE_PCT)),
+        "minutes_remaining": _as_int(scalars.get(OID_UPS_MINUTES_REMAIN)),
+        "seconds_on_battery": _as_int(scalars.get(OID_UPS_SECONDS_ON_BATT)),
+        "output_load_pct": first(loads),
+        "input_voltage": first(in_v),
+        "output_voltage": first(out_v),
+    }
+
+
+async def _inv_qos(snmp: _Snmp) -> list[dict]:
+    out = [{"kind": "policy-map", "name": _as_str(n)} for _, n in sorted((await _safe_walk(snmp, OID_CBQOS_POLICYMAP_NAME)).items())]
+    out += [{"kind": "class-map", "name": _as_str(n)} for _, n in sorted((await _safe_walk(snmp, OID_CBQOS_CM_NAME)).items())]
+    return out
+
+
+async def _inv_vpn(snmp: _Snmp) -> list[dict]:
+    peers = await _safe_walk(snmp, OID_IPSEC_TUN_PEER)
+    status = await _safe_walk(snmp, OID_IPSEC_TUN_STATUS)
+    return [
+        {"peer": _as_str(p), "status": "active" if _as_int(status.get(i)) == 1 else "inactive"}
+        for i, p in sorted(peers.items())
+    ]
+
+
+async def _inv_wireless(snmp: _Snmp) -> list[dict]:
+    return [{"name": _as_str(n)} for _, n in sorted((await _safe_walk(snmp, OID_CISCO_AP_NAME)).items())]
+
+
+async def inventory_device(device_id: uuid.UUID) -> dict | None:
+    """On-demand comprehensive SNMP walk. Gathers every category best-effort
+    (each isolated — one unsupported table never sinks the rest) and persists
+    NOTHING (no history, no cache, no audit). Backs the SNMP Explorer modal.
+
+    Returns {status, detail?, data?} or None if SNMP isn't configured."""
+    async with AsyncSessionLocal() as session:
+        device = await session.get(Device, device_id)
+    if device is None or not device.snmp_enabled:
+        return None
+    is_v3 = device.snmp_version == "3"
+    if (is_v3 and not device.snmp_v3_user) or (not is_v3 and not device.snmp_community):
+        return {"status": "error", "detail": "SNMP credentials not set"}
+
+    try:
+        snmp = _Snmp(
+            str(device.ip_address),
+            device.snmp_port or 161,
+            community=None if is_v3 else device.snmp_community,
+            v3_user=device.snmp_v3_user if is_v3 else None,
+            v3_auth_proto=device.snmp_v3_auth_proto or "sha",
+            v3_auth_key=device.snmp_v3_auth_key,
+            v3_priv_proto=device.snmp_v3_priv_proto or "aes",
+            v3_priv_key=device.snmp_v3_priv_key,
+        )
+    except ValueError as exc:  # misconfigured v3 credentials — surface, don't poll
+        return {"status": "error", "detail": str(exc)}
+
+    async def cat(coro):
+        try:
+            return await coro
+        except Exception as exc:  # noqa: BLE001 — isolate each category
+            logger.debug("snmp inventory category failed: %s", exc)
+            return None
+
+    async with _sem:
+        try:
+            # System first — if the device is unreachable this raises and we
+            # classify the whole poll as a timeout/error (nothing else will answer).
+            try:
+                system = await _inv_system(snmp)
+            except Exception as exc:  # noqa: BLE001
+                status = "timeout" if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) else "error"
+                return {"status": status, "detail": f"{type(exc).__name__}: {exc}"}
+
+            data: dict = {"system": system}
+            data["resources"] = await cat(_inv_resources(snmp)) or {}
+            data["storage"] = await cat(_inv_storage(snmp)) or []
+            data["interfaces"] = await cat(_inv_interfaces(snmp)) or []
+            data["sensors"] = await cat(_inv_sensors(snmp)) or []
+            data["vlans"] = await cat(_inv_vlans(snmp)) or []
+            data["mac_table"] = await cat(_inv_mac_table(snmp)) or []
+            data["arp"] = await cat(_inv_arp(snmp)) or []
+            data["routes"] = await cat(_inv_routes(snmp)) or []
+            data["qos"] = await cat(_inv_qos(snmp)) or []
+            data["vpn"] = await cat(_inv_vpn(snmp)) or []
+            data["wireless"] = await cat(_inv_wireless(snmp)) or []
+            data["ups"] = await cat(_inv_ups(snmp))
+        finally:
+            snmp.close()
+
+    present = ["system"]
+    for key in ("resources", "storage", "interfaces", "sensors", "vlans",
+                "mac_table", "arp", "routes", "qos", "vpn", "wireless"):
+        v = data.get(key)
+        if v:
+            present.append(key)
+    if data.get("ups"):
+        present.append("ups")
+    data["meta"] = {
+        "categories_with_data": present,
+        "collected_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return {"status": "ok", "detail": None, "data": data}
 
 
 # ── Background poll loop ──────────────────────────────────────────────────────

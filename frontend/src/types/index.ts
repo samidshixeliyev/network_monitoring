@@ -99,6 +99,16 @@ export interface SnmpHistoryPoint {
   out_bps: number | null
 }
 
+export type DeviceLinkKind = 'physical' | 'logical'
+export interface DeviceLink {
+  id: string
+  source_id: string
+  target_id: string
+  kind: DeviceLinkKind
+  label: string | null
+  created_at: string
+}
+
 export interface PingNowResult {
   alive: boolean
   rtts_ms: number[]
@@ -230,6 +240,113 @@ export interface SyslogMessage {
 export interface PaginatedSyslog {
   total: number
   items: SyslogMessage[]
+}
+
+// ── SNMP traps ────────────────────────────────────────────────────────────────
+export interface SnmpTrap {
+  id: string
+  ts: string
+  host: string
+  device_id: string | null
+  version: string
+  trap_oid: string | null
+  trap_name: string
+  severity: number // 0=emerg … 7=debug
+  if_index: number | null
+  message: string
+  varbinds: string | null
+}
+export interface PaginatedSnmpTraps {
+  total: number
+  items: SnmpTrap[]
+}
+
+// ── Comprehensive SNMP inventory (on-demand full walk) ─────────────────────────
+export interface SnmpInvSystem {
+  sys_name: string | null
+  sys_descr: string | null
+  uptime: string | null
+  contact: string | null
+  location: string | null
+  vendor: string | null
+  object_id: string | null
+  model: string | null
+  serial: string | null
+  hardware_rev: string | null
+  firmware_rev: string | null
+  software_rev: string | null
+}
+export interface SnmpInvResources {
+  cpu_percent: number | null
+  cores: number[]
+  mem_percent: number | null
+}
+export interface SnmpInvStorage {
+  descr: string | null
+  kind: 'disk' | 'ram' | 'other'
+  size_bytes: number
+  used_bytes: number
+  pct: number | null
+}
+export interface SnmpInvInterface {
+  index: number
+  name: string | null
+  descr: string | null
+  alias: string | null
+  oper: 'up' | 'down'
+  admin: 'up' | 'down'
+  type: number | null
+  mtu: number | null
+  mac: string | null
+  speed_mbps: number | null
+  in_errors: number | null
+  out_errors: number | null
+  in_discards: number | null
+  out_discards: number | null
+}
+export interface SnmpInvSensor {
+  name: string | null
+  kind: 'temperature' | 'fan' | 'power' | 'other'
+  value: number | null
+  unit: string | null
+  status: 'ok' | 'warn'
+}
+export interface SnmpInvVlan { id: number; name: string | null }
+export interface SnmpInvMac { vlan: number | null; mac: string; port: number | null; ifindex: number | null }
+export interface SnmpInvArp { ip: string; mac: string; ifindex: number }
+export interface SnmpInvRoute { dest: string; nexthop: string | null; ifindex: number | null; proto: number | null }
+export interface SnmpInvQos { kind: string; name: string | null }
+export interface SnmpInvVpn { peer: string | null; status: string }
+export interface SnmpInvWireless { name: string | null }
+export interface SnmpInvUps {
+  battery_status: string
+  charge_pct: number | null
+  minutes_remaining: number | null
+  seconds_on_battery: number | null
+  output_load_pct: number | null
+  input_voltage: number | null
+  output_voltage: number | null
+}
+export interface SnmpInventory {
+  system: SnmpInvSystem
+  resources: SnmpInvResources
+  storage: SnmpInvStorage[]
+  interfaces: SnmpInvInterface[]
+  sensors: SnmpInvSensor[]
+  vlans: SnmpInvVlan[]
+  mac_table: SnmpInvMac[]
+  arp: SnmpInvArp[]
+  routes: SnmpInvRoute[]
+  qos: SnmpInvQos[]
+  vpn: SnmpInvVpn[]
+  wireless: SnmpInvWireless[]
+  ups: SnmpInvUps | null
+  meta: { categories_with_data: string[]; collected_at: string }
+}
+export interface SnmpInventoryResult {
+  status: string
+  detail?: string | null
+  data?: SnmpInventory | null
 }
 
 // ── Auto-discovery ────────────────────────────────────────────────────────────

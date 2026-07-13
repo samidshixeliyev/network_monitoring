@@ -11,7 +11,11 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401) {
+    // A 401 on the login request itself means "wrong credentials" — let the
+    // Login page handle it (keep the typed email, show the error). Only an
+    // expired/invalid session on an AUTHENTICATED request forces a re-login.
+    const isLoginRequest = err.config?.url?.includes('/auth/login')
+    if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       window.location.href = '/login'

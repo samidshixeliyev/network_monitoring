@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     SECRET_KEY: str = "change-this-secret"
+    # Fernet key (urlsafe base64) for at-rest encryption of device credentials
+    # (SSH password, SNMP community / v3 keys). Empty → derived from SECRET_KEY
+    # (see app.core.crypto). Set explicitly in production, and especially before
+    # rotating SECRET_KEY, or previously-encrypted credentials become unreadable.
+    CREDENTIAL_ENCRYPTION_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 

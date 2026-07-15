@@ -25,6 +25,7 @@ from app.schemas.device import (
     SnmpCheckResult,
     SnmpInventoryResult,
     SshCheckResult,
+    resolve_host_to_ip,
     serialize_device,
 )
 from app.services import state_cache
@@ -115,6 +116,12 @@ async def create_device(
     current_user: User = Depends(require_permission(EDIT_DEVICE)),
 ) -> Device:
     await _validate_parent(db, None, body.parent_id)
+    # Resolve a hostname → IP off the event loop (the schema only validated the
+    # string; DNS must not run in a sync validator).
+    try:
+        body.ip_address = await resolve_host_to_ip(body.ip_address)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     device = Device(**body.model_dump(), created_by=current_user.id)
     db.add(device)
     add_audit(
@@ -156,6 +163,12 @@ async def update_device(
     changes = body.model_dump(exclude_unset=True)
     if "parent_id" in changes:
         await _validate_parent(db, device_id, changes["parent_id"])
+    # Resolve a changed hostname → IP off the event loop (see create_device).
+    if changes.get("ip_address"):
+        try:
+            changes["ip_address"] = await resolve_host_to_ip(changes["ip_address"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
     for field, value in changes.items():
         setattr(device, field, value)
     add_audit(

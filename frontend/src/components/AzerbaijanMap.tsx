@@ -7,6 +7,7 @@ import {
   Marker,
   Polygon,
   Polyline,
+  Popup,
   Tooltip,
   TileLayer,
   useMap,
@@ -35,8 +36,8 @@ const MANUAL_LINK_STYLE: Record<DeviceLinkKind, { color: string; dash?: string; 
 // served without Cache-Control, so browsers hold them indefinitely).
 const TILES_URL =
   (import.meta.env.VITE_TILES_URL as string | undefined) ?? '/tiles/osm/{z}/{x}/{y}.png?v=3'
-// Highest zoom we have tiles for (the prefetch script defaults to z9).
-const MAX_TILE_ZOOM = Number(import.meta.env.VITE_TILES_MAX_ZOOM ?? 11)
+// Highest zoom we have tiles for (backend/tiles/osm is prefetched to this level).
+const MAX_TILE_ZOOM = Number(import.meta.env.VITE_TILES_MAX_ZOOM ?? 13)
 
 const STATUS_COLOR: Record<DeviceStatus, string> = {
   online: '#16a34a',
@@ -143,6 +144,109 @@ const DeviceMarker = memo(function DeviceMarker({ device, selected, onSelect }: 
   )
 })
 
+// Worst-of status for a cluster of co-located devices (offline > unknown > online),
+// so a site badge turns red the moment ANY device in it goes down.
+function aggregateStatus(devices: Device[]): DeviceStatus {
+  if (devices.some(d => d.current_status === 'offline')) return 'offline'
+  if (devices.some(d => d.current_status === 'unknown')) return 'unknown'
+  return 'online'
+}
+
+// A "site" marker for 2+ devices sharing one coordinate — drawn as a SERVER RACK
+// CABINET (the real-world thing: several devices stacked in one rack / PoP), not
+// a plain count badge. Dark cabinet frame with status-colored trim, a few "U"
+// slots, and a corner count of how many devices are inside. Worst-of status
+// colors it (red the moment any device drops); click it to expand the list.
+function siteDivIcon(devices: Device[], selected: boolean) {
+  const color = STATUS_COLOR[aggregateStatus(devices)]
+  const n = devices.length
+  const w = selected ? 34 : 30
+  const h = Math.round(w * 1.3)
+  const anyCritDown = devices.some(d => d.is_critical && d.current_status === 'offline')
+  // Three "rack unit" slots; the top one glows in the site's status color.
+  const slots = [0, 1, 2]
+    .map(i => `<rect x="6" y="${12 + i * 6}" width="${w - 12}" height="3.4" rx="1" fill="${i === 0 ? color : '#475569'}"/>`)
+    .join('')
+  const html =
+    `<div class="nm-pin${anyCritDown ? ' nm-crit-pulse' : ''}" style="position:relative;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));">` +
+    `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="4" fill="#1e293b" stroke="${selected ? '#ffffff' : color}" stroke-width="${selected ? 2.5 : 2}"/>` +
+    `<rect x="5" y="5" width="${w - 10}" height="3" rx="1" fill="#334155"/>` +
+    slots +
+    `</svg>` +
+    `<div style="position:absolute;bottom:-6px;right:-6px;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;` +
+    `background:${color};color:#fff;border-radius:8px;border:1.5px solid #fff;` +
+    `font:800 11px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;line-height:1;">${n}</div>` +
+    `</div>`
+  return L.divIcon({ html, className: 'nm-device-pin', iconSize: [w, h], iconAnchor: [w / 2, h / 2] })
+}
+
+interface SiteMarkerProps {
+  devices: Device[]
+  position: [number, number]
+  selectedId: string | null
+  pendingSource: string | null
+  onSelect: (device: Device) => void
+}
+
+// Co-located devices collapse into one badge; the Popup is the "expand" — each
+// row opens that device (and in connect-mode picks it as source/target, which
+// resolves the "which device did I click?" ambiguity a stacked pin can't).
+const SiteMarker = memo(function SiteMarker({ devices, position, selectedId, pendingSource, onSelect }: SiteMarkerProps) {
+  const highlighted = devices.some(d => d.id === selectedId || d.id === pendingSource)
+  const icon = useMemo(
+    () => siteDivIcon(devices, highlighted),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [devices.map(d => `${d.id}:${d.current_status}:${d.is_critical}`).join('|'), highlighted],
+  )
+  const down = devices.filter(d => d.current_status === 'offline').length
+  const unknown = devices.filter(d => d.current_status === 'unknown').length
+  const online = devices.length - down - unknown
+  return (
+    <Marker position={position} icon={icon} zIndexOffset={highlighted ? 1000 : 0}>
+      <Tooltip direction="top" offset={[0, -22]}>
+        <div style={{ fontWeight: 700, fontSize: 12 }}>
+          {devices.length} cihaz · {devices[0].location_text || 'eyni nöqtə'}
+        </div>
+        <div style={{ fontSize: 11, color: '#475569' }}>
+          {online > 0 && <span style={{ color: STATUS_COLOR.online }}>{online} online</span>}
+          {unknown > 0 && <span style={{ color: STATUS_COLOR.unknown }}>{online > 0 ? ' · ' : ''}{unknown} unknown</span>}
+          {down > 0 && <span style={{ color: STATUS_COLOR.offline }}>{online + unknown > 0 ? ' · ' : ''}{down} offline</span>}
+        </div>
+      </Tooltip>
+      <Popup minWidth={220} maxWidth={300}>
+        <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>
+          {devices.length} cihaz · {devices[0].location_text || 'eyni koordinat'}
+        </div>
+        <div style={{ maxHeight: 230, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {devices.map(d => (
+            <button
+              key={d.id}
+              onClick={() => onSelect(d)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '5px 6px', width: '100%',
+                border: 'none', borderRadius: 6, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                background: d.id === selectedId || d.id === pendingSource ? '#eef2ff' : 'transparent',
+              }}
+            >
+              <span style={{ width: 9, height: 9, borderRadius: '50%', flex: '0 0 auto', background: STATUS_COLOR[d.current_status] }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 600, fontSize: 12, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {d.is_enabled ? '' : '⦸ '}{d.vendor_name}
+                </span>
+                <span style={{ fontFamily: 'monospace', fontSize: 10.5, color: '#64748b' }}>
+                  {d.ip_address} · {d.device_type}
+                </span>
+              </span>
+              {d.is_critical && <span title="kritik" style={{ color: '#dc2626', fontWeight: 800, fontSize: 12 }}>!</span>}
+            </button>
+          ))}
+        </div>
+      </Popup>
+    </Marker>
+  )
+})
+
 // Fit so the WHOLE country is visible without cropping its edges ("contain").
 // The most zoomed-out state is this full-country view — zooming out further only
 // exposes the ugly low world tiles, so it's the floor. Re-fits on resize.
@@ -189,6 +293,27 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
     [devices],
   )
 
+  // Group devices sharing a coordinate (~1 m precision). Pixel-based clustering
+  // can never separate identical coords no matter the zoom, so co-located devices
+  // (a rack / PoP) collapse into ONE clickable "site" badge; lone devices render
+  // as normal pins. This keeps overlapping markers clickable and legible.
+  const { soloDevices, siteGroups } = useMemo(() => {
+    const byCoord = new Map<string, Device[]>()
+    for (const d of placed) {
+      const key = `${(d.latitude as number).toFixed(5)},${(d.longitude as number).toFixed(5)}`
+      const arr = byCoord.get(key)
+      if (arr) arr.push(d)
+      else byCoord.set(key, [d])
+    }
+    const solo: Device[] = []
+    const sites: { key: string; position: [number, number]; devices: Device[] }[] = []
+    byCoord.forEach((group, key) => {
+      if (group.length === 1) solo.push(group[0])
+      else sites.push({ key, position: [group[0].latitude as number, group[0].longitude as number], devices: group })
+    })
+    return { soloDevices: solo, siteGroups: sites }
+  }, [placed])
+
   // Topology links: a line from each device to its parent (both must be placed
   // on the map). It's an opt-in overlay layer — HIDDEN by default; the user
   // turns the "🔗 Əlaqələr" layer on to reveal the dependency lines. The choice
@@ -220,6 +345,11 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
     mutationFn: deviceLinksApi.create,
     onSettled: () => qc.invalidateQueries({ queryKey: ['device-links'] }),
   })
+  // `mutate` is a stable reference in React Query v5; the mutation OBJECT is not
+  // (it's recreated every render). Depending on `mutate` — not `createLinkM` —
+  // keeps `handleMarker` stable, so the memoized markers don't ALL re-render on
+  // every status tick (which is a new `devices` array → a re-render).
+  const createLink = createLinkM.mutate
 
   const [connectMode, setConnectMode] = useState(false)
   const [linkKind, setLinkKind] = useState<DeviceLinkKind>('physical')
@@ -240,11 +370,11 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
       setPendingSource(prev => {
         if (!prev) return device.id
         if (prev === device.id) return null
-        createLinkM.mutate({ source_id: prev, target_id: device.id, kind: linkKind })
+        createLink({ source_id: prev, target_id: device.id, kind: linkKind })
         return null
       })
     },
-    [connectMode, linkKind, onSelect, createLinkM],
+    [connectMode, linkKind, onSelect, createLink],
   )
 
   const enterConnect = () => {
@@ -350,13 +480,25 @@ export function AzerbaijanMap({ devices, selectedId, onSelect, placing, onMapCli
         })}
 
         {/* Cluster markers so the map stays smooth at 500+ devices: nearby pins
-            collapse into a count bubble until you zoom in. */}
+            collapse into a count bubble until you zoom in. Devices sharing an
+            exact coordinate first collapse into a single "site" badge (below),
+            which the cluster then treats as one marker. */}
         <MarkerClusterGroup chunkedLoading maxClusterRadius={50} disableClusteringAtZoom={11}>
-          {placed.map(device => (
+          {soloDevices.map(device => (
             <DeviceMarker
               key={device.id}
               device={device}
               selected={device.id === selectedId || device.id === pendingSource}
+              onSelect={handleMarker}
+            />
+          ))}
+          {siteGroups.map(site => (
+            <SiteMarker
+              key={site.key}
+              devices={site.devices}
+              position={site.position}
+              selectedId={selectedId}
+              pendingSource={pendingSource}
               onSelect={handleMarker}
             />
           ))}

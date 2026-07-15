@@ -103,6 +103,19 @@ async def ws_device_shell(
     username = device.ssh_username
     password = device.ssh_password or ""
 
+    # Per-session password: the browser sends {type:'auth', password} as its very
+    # first frame. It's typed by the operator for THIS connection only and is
+    # never persisted — so a device can be reached over the web terminal without
+    # its SSH password living in the database. When the field is left blank we
+    # fall back to a stored password (if any), keeping older devices working.
+    try:
+        first_raw = await asyncio.wait_for(websocket.receive_text(), timeout=180)
+        first = json.loads(first_raw)
+        if isinstance(first, dict) and first.get("type") == "auth" and first.get("password"):
+            password = first["password"]
+    except (WebSocketDisconnect, asyncio.TimeoutError, ValueError):
+        pass
+
     await websocket.send_text(
         f"\x1b[36mConnecting to {username}@{host}:{port} …\x1b[0m\r\n"
     )

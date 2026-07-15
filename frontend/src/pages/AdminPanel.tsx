@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi, type AdminRole, type AdminUser } from '../api/admin'
 import { useAuth } from '../hooks/useAuth'
+import { useBackdropClose } from '../lib/useBackdropClose'
 
 // Admin panel: user + role management. Access is PERMISSION-based — a role is
 // just a named bundle of permissions; admins can compose custom roles here and
@@ -58,6 +59,7 @@ function Modal({ title, onClose, children, width = 420 }: {
     document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
   }, [onClose])
+  const backdrop = useBackdropClose(onClose)
 
   return (
     <div
@@ -65,7 +67,7 @@ function Modal({ title, onClose, children, width = 420 }: {
         position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000,
       }}
-      onClick={onClose}
+      {...backdrop}
     >
       <div
         style={{

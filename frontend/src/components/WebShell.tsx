@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -10,16 +11,74 @@ interface Props {
   onClose: () => void
 }
 
+const WIDTH = 880
+const HEIGHT = 540
+
 /**
  * Browser SSH terminal: an xterm.js terminal bridged over a WebSocket to an
  * interactive SSH shell on the device (backend /ws/devices/{id}/shell).
+ *
+ * It's a FLOATING, DRAGGABLE window — no dimming backdrop — so:
+ *   • an accidental click outside can never kill the session (only × closes it), and
+ *   • the window can be parked aside by its title bar while you use the map behind it.
+ *
+ * The SSH password is typed here per-session and sent to the backend as the first
+ * WebSocket frame ({type:'auth'}). It is used only for that one connection and is
+ * never stored in the database.
  */
 export function WebShell({ device, onClose }: Props) {
   const termHostRef = useRef<HTMLDivElement>(null)
   const { user } = useAuth()
   const authToken = user?.token ?? ''
+  const sshUser = device.ssh_username ?? 'root'
+
+  // Login gate: the terminal (and the WebSocket) only start once a password has
+  // been submitted. The typed password is held in a ref so keystrokes don't
+  // re-run the terminal effect.
+  const [password, setPassword] = useState('')
+  const [connected, setConnected] = useState(false)
+  const pwRef = useRef('')
+  const connect = useCallback(() => {
+    pwRef.current = password
+    setConnected(true)
+  }, [password])
+
+  // Floating-window top-left; starts centered, then the header drags it anywhere.
+  const [pos, setPos] = useState(() => ({
+    x: Math.max(8, (window.innerWidth - WIDTH) / 2),
+    y: Math.max(8, (window.innerHeight - HEIGHT) / 2),
+  }))
+  const drag = useRef<{ dx: number; dy: number } | null>(null)
+
+  const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+    // Never start a drag from the × button.
+    if ((e.target as HTMLElement).closest('button')) return
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
+    e.preventDefault()
+  }, [pos.x, pos.y])
 
   useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!drag.current) return
+      const x = e.clientX - drag.current.dx
+      const y = e.clientY - drag.current.dy
+      // Keep the title bar reachable so the window can always be grabbed back.
+      setPos({
+        x: Math.min(Math.max(-WIDTH + 100, x), window.innerWidth - 100),
+        y: Math.min(Math.max(0, y), window.innerHeight - 40),
+      })
+    }
+    const onUp = () => { drag.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!connected) return
     const host = termHostRef.current
     if (!host) return
 
@@ -27,6 +86,9 @@ export function WebShell({ device, onClose }: Props) {
       cursorBlink: true,
       fontFamily: 'Consolas, "Courier New", monospace',
       fontSize: 13,
+      // Keep plenty of history so `show configuration` / long output can be
+      // scrolled back through with the mouse wheel.
+      scrollback: 5000,
       theme: { background: '#0b0f19', foreground: '#e2e8f0', cursor: '#5eead4' },
     })
     const fit = new FitAddon()
@@ -43,7 +105,11 @@ export function WebShell({ device, onClose }: Props) {
     const ws = new WebSocket(url)
     let disposed = false
 
-    ws.onopen = () => term.focus()
+    ws.onopen = () => {
+      // First frame carries the per-session password (never persisted server-side).
+      ws.send(JSON.stringify({ type: 'auth', password: pwRef.current }))
+      term.focus()
+    }
     ws.onmessage = (e) => term.write(typeof e.data === 'string' ? e.data : '')
     ws.onclose = () => { if (!disposed) term.write('\r\n\x1b[33m[bağlantı bağlandı]\x1b[0m\r\n') }
 
@@ -67,42 +133,79 @@ export function WebShell({ device, onClose }: Props) {
       ws.close()
       term.dispose()
     }
-  }, [device.id, authToken])
+  }, [connected, device.id, authToken])
 
-  return (
+  return createPortal(
     <div
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5000,
+        position: 'fixed', top: pos.y, left: pos.x,
+        width: WIDTH, maxWidth: '96vw', height: HEIGHT, maxHeight: '90vh', zIndex: 5000,
+        background: '#0b0f19', borderRadius: 10, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 24px 60px rgba(0,0,0,0.5)', border: '1px solid #1f2937',
       }}
-      onClick={onClose}
     >
       <div
+        onMouseDown={onHeaderMouseDown}
         style={{
-          width: 880, maxWidth: '96vw', height: 540, maxHeight: '90vh',
-          background: '#0b0f19', borderRadius: 10, overflow: 'hidden',
-          display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '8px 14px', background: '#111827', borderBottom: '1px solid #1f2937',
-          fontFamily: 'system-ui, sans-serif',
-        }}>
-          <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
-            🖧 {device.vendor_name}
-            <span style={{ color: '#64748b', fontFamily: 'monospace', marginLeft: 8 }}>
-              ssh {device.ssh_username ?? 'root'}@{device.ip_address}
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}
-          >×</button>
+          fontFamily: 'system-ui, sans-serif', cursor: 'move', userSelect: 'none',
+        }}
+      >
+        <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
+          🖧 {device.vendor_name}
+          <span style={{ color: '#64748b', fontFamily: 'monospace', marginLeft: 8 }}>
+            ssh {sshUser}@{device.ip_address}
+          </span>
         </div>
-        <div ref={termHostRef} style={{ flex: 1, padding: 8, background: '#0b0f19' }} />
+        <button
+          onClick={onClose}
+          title="Bağla"
+          aria-label="Bağla"
+          style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}
+        >×</button>
       </div>
-    </div>
+
+      {connected ? (
+        <div ref={termHostRef} style={{ flex: 1, minHeight: 0, padding: '12px 8px', background: '#0b0f19' }} />
+      ) : (
+        <form
+          onSubmit={(e) => { e.preventDefault(); connect() }}
+          style={{
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 14, padding: 24,
+            fontFamily: 'system-ui, sans-serif', color: '#e2e8f0',
+          }}
+        >
+          <div style={{ fontSize: 14, color: '#94a3b8' }}>
+            <span style={{ fontFamily: 'monospace', color: '#e2e8f0' }}>{sshUser}@{device.ip_address}</span> üçün SSH parolu
+          </div>
+          <input
+            type="password"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="SSH parolu"
+            style={{
+              width: 280, padding: '10px 12px', fontSize: 14, borderRadius: 6,
+              border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0',
+              fontFamily: 'inherit', outline: 'none',
+            }}
+          />
+          <button
+            type="submit"
+            style={{
+              padding: '9px 22px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: '#0d9488', color: '#fff', fontSize: 14, fontWeight: 600,
+            }}
+          >Qoşul</button>
+          <div style={{ fontSize: 11, color: '#64748b', maxWidth: 320, textAlign: 'center' }}>
+            Parol yalnız bu sessiya üçün istifadə olunur, verilənlər bazasında saxlanmır.
+          </div>
+        </form>
+      )}
+    </div>,
+    document.body,
   )
 }

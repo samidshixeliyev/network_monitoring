@@ -9,7 +9,7 @@ import { SnmpPanel } from './SnmpPanel'
 import { DiagnosticsPanel } from './DiagnosticsPanel'
 import { StatusBadge } from './StatusBadge'
 import { useAuth } from '../hooks/useAuth'
-import type { Device, DeviceUpdate, SshFacts } from '../types'
+import type { Device, DeviceCreate, DeviceUpdate, SshFacts } from '../types'
 import { DEVICE_TYPE_LABELS } from '../lib/deviceIcons'
 
 // Right-hand device drawer, organised into tabs so each concern has room:
@@ -60,10 +60,14 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
   // Mute/maintenance is an admin action (per ops policy) — manager only.
   const canMute = isManager
   const [editing, setEditing] = useState(false)
+  // Adding a NEW device at the edited device's location (rack/site sibling).
+  const [addingAtLoc, setAddingAtLoc] = useState(false)
   const [showShell, setShowShell] = useState(false)
   const [tab, setTab] = useState<Tab>('general')
 
-  useEffect(() => { setEditing(false); setShowShell(false); setTab('general') }, [device?.id])
+  useEffect(() => {
+    setEditing(false); setAddingAtLoc(false); setShowShell(false); setTab('general')
+  }, [device?.id])
 
   const { data: eventsData } = useQuery({
     queryKey: ['device-events', device?.id],
@@ -79,6 +83,11 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
   const updateM = useMutation({
     mutationFn: ({ id, data }: { id: string; data: DeviceUpdate }) => devicesApi.update(id, data),
     onSuccess: () => { invalidate(); setEditing(false) },
+  })
+  // Create a new device (used by "add another at this location" from edit mode).
+  const createM = useMutation({
+    mutationFn: (data: DeviceCreate) => devicesApi.create(data),
+    onSuccess: invalidate,
   })
   const simM = useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'online' | 'offline' }) =>
@@ -142,6 +151,22 @@ export function DeviceDrawer({ device, isManager, onClose }: Props) {
           allDevices={allDev}
           onSave={async (data) => { await updateM.mutateAsync({ id: device.id, data: data as DeviceUpdate }) }}
           onClose={() => setEditing(false)}
+          onAddAnother={() => { setEditing(false); setAddingAtLoc(true) }}
+        />
+      )}
+
+      {/* "Add another device at this location" — a fresh CREATE form pre-filled
+          with this device's coordinates (so rack/site siblings are easy to add). */}
+      {addingAtLoc && (
+        <DeviceForm
+          initialCoords={
+            device.latitude != null && device.longitude != null
+              ? { lat: device.latitude, lng: device.longitude }
+              : undefined
+          }
+          allDevices={allDev}
+          onSave={async (data) => { await createM.mutateAsync(data as DeviceCreate) }}
+          onClose={() => setAddingAtLoc(false)}
         />
       )}
 

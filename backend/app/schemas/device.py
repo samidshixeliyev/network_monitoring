@@ -1,3 +1,4 @@
+import asyncio
 import ipaddress
 import socket
 import uuid
@@ -9,19 +10,45 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.device import DeviceStatus, DeviceType
 
 
-def _resolve_to_ip(value: object) -> str:
+def _validate_host(value: object) -> str:
+    """Validate an IP literal, or accept a plausible hostname for LATER async
+    resolution in the route. DNS must never run here: Pydantic validators are
+    sync, and socket.gethostbyname would block the whole async event loop
+    (freezing pings/websockets). Actual resolution is done by resolve_host_to_ip.
+    """
     s = str(value).strip()
-    # Already a valid IP — return as-is
+    if not s:
+        raise ValueError("ip_address must not be empty")
+    try:
+        ipaddress.ip_address(s)  # already an IP literal → accept as-is
+    except ValueError:
+        # Not an IP: treat as a hostname (resolved off the event loop in the
+        # route). Reject obvious garbage — no whitespace/control chars — but do
+        # not touch DNS here.
+        if any(c.isspace() for c in s):
+            raise ValueError(f"Not a valid IP address or hostname: {s!r}")
+    return s
+
+
+async def resolve_host_to_ip(value: str) -> str:
+    """Resolve a hostname to an IP literal WITHOUT blocking the event loop
+    (loop.getaddrinfo runs on the resolver thread pool). Returns the input
+    unchanged when it is already an IP. Raises ValueError on resolution failure.
+    Called by the device create/update routes after schema validation."""
+    s = value.strip()
     try:
         ipaddress.ip_address(s)
         return s
     except ValueError:
         pass
-    # Treat as hostname — resolve synchronously (Pydantic validators are sync)
+    loop = asyncio.get_running_loop()
     try:
-        return socket.gethostbyname(s)
-    except socket.gaierror:
-        raise ValueError(f"Not a valid IP address and could not resolve hostname: {s!r}")
+        infos = await loop.getaddrinfo(s, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"Could not resolve hostname {s!r}: {exc}")
+    if not infos:
+        raise ValueError(f"Could not resolve hostname {s!r}")
+    return str(infos[0][4][0])
 
 
 class DeviceBase(BaseModel):
@@ -57,7 +84,7 @@ class DeviceBase(BaseModel):
     @field_validator("ip_address", mode="before")
     @classmethod
     def validate_ip(cls, v: object) -> str:
-        return _resolve_to_ip(v)
+        return _validate_host(v)
 
 
 class DeviceCreate(DeviceBase):
@@ -101,7 +128,7 @@ class DeviceUpdate(BaseModel):
     def validate_ip(cls, v: object) -> str | None:
         if v is None:
             return None
-        return _resolve_to_ip(v)
+        return _validate_host(v)
 
 
 class DeviceSimulate(BaseModel):

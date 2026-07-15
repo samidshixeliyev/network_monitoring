@@ -557,6 +557,8 @@ async def _run_collection(
 async def collect_device(device_id: uuid.UUID) -> dict | None:
     """Poll one device over SNMP and persist facts + a history sample. Returns
     a summary dict, or None if the device is missing / SNMP not configured."""
+    # Phase 1: read config, then release the pool connection before the (slow,
+    # multi-walk) SNMP poll — otherwise one pool connection is pinned per collect.
     async with AsyncSessionLocal() as session:
         device = await session.get(Device, device_id)
         if device is None or not device.snmp_enabled:
@@ -570,27 +572,33 @@ async def collect_device(device_id: uuid.UUID) -> dict | None:
             return {"status": "error", "detail": f"no {missing} set"}
 
         host = str(device.ip_address)
+        snmp = _Snmp(
+            host,
+            device.snmp_port or 161,
+            community=None if is_v3 else device.snmp_community,
+            v3_user=device.snmp_v3_user if is_v3 else None,
+            v3_auth_proto=device.snmp_v3_auth_proto or "sha",
+            v3_auth_key=device.snmp_v3_auth_key,
+            v3_priv_proto=device.snmp_v3_priv_proto or "aes",
+            v3_priv_key=device.snmp_v3_priv_key,
+        )
 
-        status = "ok"
-        detail = None
-        result: dict | None = None
-        try:
-            snmp = _Snmp(
-                host,
-                device.snmp_port or 161,
-                community=None if is_v3 else device.snmp_community,
-                v3_user=device.snmp_v3_user if is_v3 else None,
-                v3_auth_proto=device.snmp_v3_auth_proto or "sha",
-                v3_auth_key=device.snmp_v3_auth_key,
-                v3_priv_proto=device.snmp_v3_priv_proto or "aes",
-                v3_priv_key=device.snmp_v3_priv_key,
-            )
-            result = await _run_collection(device.id, snmp)
-        except Exception as exc:  # noqa: BLE001 — classify
-            status = "timeout" if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) else "error"
-            detail = f"{type(exc).__name__}: {exc}"
-            logger.info("snmp collect %s (%s) → %s", host, status, detail)
+    # Phase 2: SNMP poll with NO DB connection held.
+    status = "ok"
+    detail = None
+    result: dict | None = None
+    try:
+        result = await _run_collection(device_id, snmp)
+    except Exception as exc:  # noqa: BLE001 — classify
+        status = "timeout" if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) else "error"
+        detail = f"{type(exc).__name__}: {exc}"
+        logger.info("snmp collect %s (%s) → %s", host, status, detail)
 
+    # Phase 3: persist on a fresh short-lived session.
+    async with AsyncSessionLocal() as session:
+        device = await session.get(Device, device_id)
+        if device is None:
+            return None
         now = datetime.now(timezone.utc)
         device.snmp_status = status
         device.snmp_collected_at = now

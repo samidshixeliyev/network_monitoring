@@ -34,6 +34,10 @@ USER_AGENT = os.getenv(
     "TILE_USER_AGENT",
     "network-monitoring-offline-tiles/1.0 (one-time bbox prefetch; contact: aliagha.huseynli@gmail.com)",
 )
+# Parallel fetches. Deep zooms (z12/z13) are tens of thousands of tiles; a serial
+# 0.1s-polite loop would take hours, so fan out across a small thread pool. Keep
+# it modest to stay a good CDN citizen.
+CONCURRENCY = int(os.getenv("CONCURRENCY", "8"))
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(_HERE, os.pardir, "tiles", "osm")
@@ -47,47 +51,68 @@ def deg2num(lat: float, lon: float, z: int) -> tuple[int, int]:
     return max(0, min(n - 1, x)), max(0, min(n - 1, y))
 
 
+def _fetch(task: tuple) -> tuple:
+    z, x, y, dest, url = task
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = r.read()
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
+        return (z, x, y, True, hashlib.sha256(data).hexdigest(), None)
+    except Exception as exc:  # noqa: BLE001
+        return (z, x, y, False, None, str(exc))
+
+
 def download(bbox: tuple[float, float, float, float]) -> None:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     west, south, east, north = bbox
-    total = downloaded = skipped = failed = 0
-    # Guard against servers that answer HTTP 200 with an identical "access
-    # blocked" error tile for every request (tile.openstreetmap.org does this):
-    # if the first several downloads are byte-identical, abort — real map tiles
-    # for different z/x/y are never all the same image.
-    seen_hashes: set[str] = set()
+    # Build the work list first (skipping already-cached tiles so re-runs are cheap).
+    tasks: list[tuple] = []
+    skipped = 0
     for z in range(MIN_ZOOM, MAX_ZOOM + 1):
         x0, y0 = deg2num(north, west, z)   # top-left
         x1, y1 = deg2num(south, east, z)   # bottom-right
         for x in range(min(x0, x1), max(x0, x1) + 1):
             for y in range(min(y0, y1), max(y0, y1) + 1):
-                total += 1
                 dest = os.path.join(OUT_DIR, str(z), str(x), f"{y}.png")
                 if os.path.exists(dest):
                     skipped += 1
                     continue
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                url = f"{TILE_SERVER}/{z}/{x}/{y}.png"
-                req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                try:
-                    with urllib.request.urlopen(req, timeout=20) as r:
-                        data = r.read()
-                    with open(dest, "wb") as f:
-                        f.write(data)
-                    downloaded += 1
-                    seen_hashes.add(hashlib.sha256(data).hexdigest())
-                    if downloaded >= 8 and len(seen_hashes) == 1:
-                        sys.exit(
-                            f"ABORT: first {downloaded} tiles are byte-identical — "
-                            f"{TILE_SERVER} is serving an error/blocked tile. "
-                            "Try another TILE_SERVER."
-                        )
-                    time.sleep(0.1)  # be polite to the tile server
-                except Exception as exc:  # noqa: BLE001
-                    failed += 1
-                    print(f"  FAIL z{z}/{x}/{y}: {exc}")
-        print(f"zoom {z}: done ({downloaded} new, {skipped} cached, {failed} failed so far)")
-    print(f"\nTotal {total} tiles -> {os.path.abspath(OUT_DIR)}")
-    print(f"  downloaded={downloaded} skipped={skipped} failed={failed}")
+                tasks.append((z, x, y, dest, f"{TILE_SERVER}/{z}/{x}/{y}.png"))
+
+    print(f"To fetch: {len(tasks)} tiles ({skipped} already cached), concurrency={CONCURRENCY}")
+    downloaded = failed = 0
+    per_zoom: dict[int, int] = {}
+    # Guard against servers that answer HTTP 200 with an identical "access blocked"
+    # tile for every request: if the first several successes are byte-identical, abort.
+    seen_hashes: set[str] = set()
+    with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
+        futs = [ex.submit(_fetch, t) for t in tasks]
+        for i, fut in enumerate(as_completed(futs), 1):
+            z, x, y, ok, h, err = fut.result()
+            if ok:
+                downloaded += 1
+                seen_hashes.add(h)
+                per_zoom[z] = per_zoom.get(z, 0) + 1
+                if downloaded >= 8 and len(seen_hashes) == 1:
+                    ex.shutdown(wait=False, cancel_futures=True)
+                    sys.exit(
+                        f"ABORT: first {downloaded} tiles are byte-identical — "
+                        f"{TILE_SERVER} is serving an error/blocked tile. Try another TILE_SERVER."
+                    )
+            else:
+                failed += 1
+                if failed <= 20:
+                    print(f"  FAIL z{z}/{x}/{y}: {err}")
+            if i % 1000 == 0:
+                print(f"  {i}/{len(tasks)} ({downloaded} ok, {failed} failed)")
+
+    print(f"\nTotal fetched={downloaded} failed={failed} skipped={skipped} -> {os.path.abspath(OUT_DIR)}")
+    for z in sorted(per_zoom):
+        print(f"  z{z}: {per_zoom[z]} new")
 
 
 if __name__ == "__main__":

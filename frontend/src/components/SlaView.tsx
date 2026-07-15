@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchSla, slaExportUrl } from '../api/sla'
+import { fetchSla, downloadSlaExport } from '../api/sla'
 
 const RANGES = [
   { key: 'day', label: 'Gün' },
@@ -14,7 +14,20 @@ function pctColor(p: number): string {
 
 export function SlaView() {
   const [range, setRange] = useState<string>('week')
+  const [exporting, setExporting] = useState(false)
   const { data, isLoading } = useQuery({ queryKey: ['sla', range], queryFn: () => fetchSla(range) })
+
+  const onExport = async () => {
+    setExporting(true)
+    try {
+      await downloadSlaExport(range)
+    } catch {
+      // eslint-disable-next-line no-alert
+      alert('CSV export alınmadı')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
@@ -33,9 +46,14 @@ export function SlaView() {
             </button>
           ))}
         </div>
-        <a href={slaExportUrl(range)} style={{ marginLeft: 'auto', fontSize: 13, color: '#1e40af', textDecoration: 'none', fontWeight: 600 }}>
-          ⬇ CSV export
-        </a>
+        <button onClick={onExport} disabled={exporting}
+          style={{
+            marginLeft: 'auto', fontSize: 13, color: '#1e40af', fontWeight: 600,
+            background: 'none', border: 'none', cursor: exporting ? 'default' : 'pointer',
+            fontFamily: 'inherit', opacity: exporting ? 0.6 : 1,
+          }}>
+          {exporting ? '⏳ export…' : '⬇ CSV export'}
+        </button>
       </div>
 
       {isLoading || !data ? (

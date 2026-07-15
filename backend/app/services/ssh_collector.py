@@ -12,6 +12,7 @@ Uses asyncssh (pure-python, async) — host-key checking is disabled
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -80,12 +81,26 @@ async def _run_collection(host: str, port: int, username: str, password: str) ->
         proc_uptime = await sh("cat /proc/uptime")
         ip_out = await sh("ip -o -4 addr show 2>/dev/null")
         kernel = await sh("uname -sr")
+        uptime = _format_uptime(proc_uptime)
+
+        # Network-OS fallback (Junos et al.): an SSH exec has no POSIX shell, so
+        # the Linux probes come back empty and drop us into the device CLI. Pull
+        # hostname/uptime from Junos CLI so a terminal-capable device still shows
+        # facts; SNMP fills in the richer telemetry.
+        if not hostname and not kernel:
+            hn = await sh("show configuration system host-name | display set")
+            if hn:  # "set system host-name vjunos-baki"
+                hostname = hn.split()[-1].rstrip(";") or None
+            up = await sh('show system uptime | match "System booted"')
+            m = re.search(r"\(([^)]+) ago\)", up) if up else None
+            if m:
+                uptime = m.group(1).strip()
 
     facts["interfaces"] = _parse_interfaces(ip_out)
     facts["kernel"] = kernel or None
     return {
         "hostname": hostname or None,
-        "uptime": _format_uptime(proc_uptime),
+        "uptime": uptime,
         "facts": facts,
     }
 
@@ -93,6 +108,8 @@ async def _run_collection(host: str, port: int, username: str, password: str) ->
 async def collect_device(device_id: uuid.UUID) -> dict | None:
     """Collect SSH facts for one device and persist them. Returns a summary
     dict, or None if the device is missing / SSH not configured."""
+    # Phase 1: read config, then release the pool connection before the (slow)
+    # SSH session — otherwise one pool connection is pinned per in-flight collect.
     async with AsyncSessionLocal() as session:
         device = await session.get(Device, device_id)
         if device is None or not device.ssh_enabled:
@@ -108,23 +125,29 @@ async def collect_device(device_id: uuid.UUID) -> dict | None:
         username = device.ssh_username
         password = device.ssh_password or ""
 
-        status = "ok"
-        detail = None
-        result: dict | None = None
-        try:
-            result = await _run_collection(host, port, username, password)
-        except Exception as exc:  # noqa: BLE001 — classify by message/type
-            import asyncssh
+    # Phase 2: SSH collection with NO DB connection held.
+    status = "ok"
+    detail = None
+    result: dict | None = None
+    try:
+        result = await _run_collection(host, port, username, password)
+    except Exception as exc:  # noqa: BLE001 — classify by message/type
+        import asyncssh
 
-            if isinstance(exc, asyncssh.PermissionDenied):
-                status = "auth_failed"
-            elif isinstance(exc, (asyncssh.ConnectionLost, ConnectionError, OSError, asyncio.TimeoutError)):
-                status = "unreachable"
-            else:
-                status = "error"
-            detail = f"{type(exc).__name__}: {exc}"
-            logger.info("ssh collect %s (%s) → %s", host, status, detail)
+        if isinstance(exc, asyncssh.PermissionDenied):
+            status = "auth_failed"
+        elif isinstance(exc, (asyncssh.ConnectionLost, ConnectionError, OSError, asyncio.TimeoutError)):
+            status = "unreachable"
+        else:
+            status = "error"
+        detail = f"{type(exc).__name__}: {exc}"
+        logger.info("ssh collect %s (%s) → %s", host, status, detail)
 
+    # Phase 3: persist on a fresh short-lived session.
+    async with AsyncSessionLocal() as session:
+        device = await session.get(Device, device_id)
+        if device is None:
+            return None
         now = datetime.now(timezone.utc)
         device.ssh_status = status
         device.ssh_collected_at = now

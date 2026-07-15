@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
 import { formatBps } from '../lib/format'
+import { useBackdropClose } from '../lib/useBackdropClose'
 import type { Device, SnmpFacts, SnmpInterface } from '../types'
 
 // Futuristic per-port traffic monitor. Opens in a medium modal. Per-interface
@@ -122,9 +123,11 @@ export function TrafficModal({ device: deviceProp, canPoll, onClose }: Props) {
   const selIface = ifaces.find(i => i.index === selected) ?? null
   const buf = selected != null ? buffers[selected] ?? [] : []
 
+  const backdrop = useBackdropClose(onClose)
+
   return createPortal(
     <div
-      onClick={onClose}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, zIndex: 4000,
         background: 'rgba(2,6,23,0.72)', backdropFilter: 'blur(4px)',

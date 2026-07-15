@@ -285,3 +285,50 @@ services:
     cap_add:
       - NET_ADMIN
     restart: unless-stopped
+
+  # A "vJunos" stand-in whose SSH login shell is a Junos CLI emulator, so the web
+  # terminal lands on `root@…>` with working show/configure/set/commit (not a
+  # bare shell). Emulator, not real Junos — see lab/vjunos/README.md for the VM.
+  juniper-vjunos-naxcivan:
+    profiles: [lab]
+    build: ./lab/junos-emu
+    image: netmon-junos-emu
+    container_name: juniper-vjunos-naxcivan
+    hostname: vjunos-naxcivan
+    labels: ["netmon.role=device"]
+    environment:
+      DEVICE_ROOT_PASSWORD: "Lab_Dev1ce!"
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.15
+    ports:
+      - "2215:22"
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  # ══ Junos profile: a REAL vJunos-router VM ═════════════════════════════════
+  # Separate, heavier profile — a genuine Junos VM booted from a vrnetlab image.
+  # Needs the image built first (git+make+the free Junos qcow2) — see
+  # lab/vjunos/README.md. SSH into it from the web terminal → the actual Junos
+  # CLI (login → `>` prompt → `configure`), not an instant shell.
+  #
+  #   docker compose --profile junos up -d          # boots the VM (~3-5 min)
+  #   docker compose exec api python seed_junos_device.py   # register it
+  #
+  # vrnetlab NATs SSH(22)/SNMP(161)/NETCONF(830) from this container's netlab IP
+  # to the VM, so the collector reaches Junos at 172.30.0.21 like any device.
+  vjunos-baki:
+    profiles: [junos]
+    image: ${VJUNOS_IMAGE:-vrnetlab/juniper_vjunosrouter:23.4R1.10}
+    container_name: vjunos-baki
+    hostname: vjunos-baki
+    labels: ["netmon.role=device"]
+    # KVM passthrough + privileged: the container runs qemu to boot the Junos VM.
+    privileged: true
+    devices:
+      - /dev/kvm
+    networks:
+      netlab:
+        ipv4_address: 172.30.0.21
+    restart: unless-stopped

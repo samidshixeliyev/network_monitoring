@@ -103,15 +103,49 @@ async def _ping_host(ip: str) -> tuple[bool, float | None, int, int]:
 
 # ── State machine: online → unknown → offline ───────────────────────────────
 async def _check_one(device_id: uuid.UUID) -> None:
+    # ── Phase 1: read config, then RELEASE the pool connection ────────────────
+    # Holding a session across the multi-second ping (+ TCP/HTTP checks) pins one
+    # pool connection per in-flight probe; with 64 concurrent checks that drains
+    # the pool and serializes everything on pool-timeouts. So we read what we
+    # need, drop the connection, probe, then reopen a short session to write.
+    async with AsyncSessionLocal() as session:
+        device = await session.get(Device, device_id)
+        if device is None or not device.is_enabled:
+            return
+        ip = str(device.ip_address)
+        check_tcp_port = device.check_tcp_port
+        check_http_url = device.check_http_url
+        check_http_expect = device.check_http_expect
+
+    # ── Phase 2: probe with NO DB connection held ─────────────────────────────
+    alive, rtt_ms, sent, received = await _ping_host(ip)
+
+    has_service_check = bool(check_tcp_port or check_http_url)
+    service_ok: bool | None = None
+    service_detail: str | None = None
+    if has_service_check:
+        # Multi-condition: TCP/HTTP service check (catches "pings but service dead").
+        ok = True
+        details: list[str] = []
+        if check_tcp_port:
+            o, d = await tcp_check(ip, check_tcp_port)
+            ok = ok and o
+            details.append(d)
+        if check_http_url:
+            o, d = await http_check(check_http_url, check_http_expect or 200)
+            ok = ok and o
+            details.append(d)
+        service_ok = ok
+        service_detail = "; ".join(details)[:255]
+
+    # ── Phase 3: persist on a fresh short-lived session ───────────────────────
     async with AsyncSessionLocal() as session:
         device = await session.get(Device, device_id)
         if device is None or not device.is_enabled:
             return
 
-        ip = str(device.ip_address)
-        alive, rtt_ms, sent, received = await _ping_host(ip)
-
         prev_status = device.current_status
+        prev_service_ok = device.service_ok
         now = datetime.now(timezone.utc)
         device.last_checked_at = now
 
@@ -133,21 +167,9 @@ async def _check_one(device_id: uuid.UUID) -> None:
             else:
                 new_status = DeviceStatus.unknown      # 1st miss → yellow
 
-        # Multi-condition: TCP/HTTP service check (catches "pings but service dead").
-        prev_service_ok = device.service_ok
-        if device.check_tcp_port or device.check_http_url:
-            ok = True
-            details: list[str] = []
-            if device.check_tcp_port:
-                o, d = await tcp_check(ip, device.check_tcp_port)
-                ok = ok and o
-                details.append(d)
-            if device.check_http_url:
-                o, d = await http_check(device.check_http_url, device.check_http_expect or 200)
-                ok = ok and o
-                details.append(d)
-            device.service_ok = ok
-            device.service_detail = "; ".join(details)[:255]
+        if has_service_check:
+            device.service_ok = service_ok
+            device.service_detail = service_detail
         else:
             device.service_ok = None
             device.service_detail = None

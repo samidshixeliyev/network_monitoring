@@ -12,6 +12,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // The source is bind-mounted from the Windows filesystem into the WSL Docker
+    // container; native inotify events don't cross that boundary, so HMR only
+    // works with polling. Slightly more CPU, but edits hot-reload reliably.
+    watch: { usePolling: true, interval: 300 },
     proxy: {
       '/api': {
         target: apiTarget,

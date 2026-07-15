@@ -28,6 +28,7 @@ LAB = [
     ("Juniper MX204",       "172.30.0.12", "MX204",   "router",   False, "Gəncə",    40.6828, 46.3606),
     ("Cisco Catalyst 9300", "172.30.0.13", "C9300",   "switch",   False, "Sumqayıt", 40.5897, 49.6686),
     ("Juniper SRX340",      "172.30.0.14", "SRX340",  "firewall", True,  "Lənkəran", 38.7529, 48.8508),
+    ("Juniper vJunos R1",   "172.30.0.15", "vJunos",  "router",   False, "Naxçıvan", 39.2090, 45.4122),
 ]
 
 # All lab device containers run sshd with these credentials (see

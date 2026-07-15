@@ -21,6 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.crypto import EncryptedString
 from app.models.base import Base
 
 if TYPE_CHECKING:
@@ -91,7 +92,8 @@ class Device(Base):
     )
     ssh_port: Mapped[int] = mapped_column(Integer, default=22, server_default="22", nullable=False)
     ssh_username: Mapped[str | None] = mapped_column(Unicode(100))
-    ssh_password: Mapped[str | None] = mapped_column(Unicode(255))
+    # Encrypted at rest (Fernet) so DB dumps/backups never expose the password.
+    ssh_password: Mapped[str | None] = mapped_column(EncryptedString)
     # Last collection result: unknown | ok | auth_failed | unreachable | error
     ssh_status: Mapped[str] = mapped_column(
         String(20), default="unknown", server_default="unknown", nullable=False
@@ -110,7 +112,8 @@ class Device(Base):
         Boolean, default=False, server_default="false", nullable=False
     )
     snmp_port: Mapped[int] = mapped_column(Integer, default=161, server_default="161", nullable=False)
-    snmp_community: Mapped[str | None] = mapped_column(Unicode(100))
+    # Encrypted at rest (Fernet), like ssh_password.
+    snmp_community: Mapped[str | None] = mapped_column(EncryptedString)
     snmp_version: Mapped[str] = mapped_column(
         String(5), default="2c", server_default="2c", nullable=False
     )
@@ -121,12 +124,14 @@ class Device(Base):
     snmp_v3_auth_proto: Mapped[str] = mapped_column(
         String(10), default="sha", server_default="sha", nullable=False
     )
-    snmp_v3_auth_key: Mapped[str | None] = mapped_column(Unicode(255))
+    # Encrypted at rest (Fernet), like ssh_password.
+    snmp_v3_auth_key: Mapped[str | None] = mapped_column(EncryptedString)
     # none | des | aes | aes256
     snmp_v3_priv_proto: Mapped[str] = mapped_column(
         String(10), default="aes", server_default="aes", nullable=False
     )
-    snmp_v3_priv_key: Mapped[str | None] = mapped_column(Unicode(255))
+    # Encrypted at rest (Fernet), like ssh_password.
+    snmp_v3_priv_key: Mapped[str | None] = mapped_column(EncryptedString)
     # Last collection result: unknown | ok | timeout | error
     snmp_status: Mapped[str] = mapped_column(
         String(20), default="unknown", server_default="unknown", nullable=False
